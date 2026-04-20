@@ -27,6 +27,17 @@ alembic/__pycache__/
 # Firebase credentials (NUNCA subir)
 firebase_credentials.json
 
+# Uploads (evidencias de incidentes)
+uploads/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.mp3
+*.m4a
+*.wav
+*.webp
+
 # OS
 .DS_Store
 Thumbs.db

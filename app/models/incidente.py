@@ -12,7 +12,7 @@ class Incidente(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     cliente_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
-    vehiculo_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("vehiculos.id"), nullable=False)
+    vehiculo_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("vehiculos.id"), nullable=True)
     descripcion_texto: Mapped[str | None] = mapped_column(Text)
     latitud: Mapped[float | None] = mapped_column(DECIMAL(10, 7))
     longitud: Mapped[float | None] = mapped_column(DECIMAL(10, 7))
