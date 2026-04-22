@@ -126,6 +126,17 @@ class IncidenteResponse(BaseModel):
     # Evidencias
     evidencias: list[EvidenciaResumen] = []
 
+    pagado: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_pagado(cls, data: Any) -> Any:
+        # Si viene un ORM object, leer la relación `pago` y convertirla a bool
+        if not isinstance(data, dict):
+            pago = getattr(data, "pago", None)
+            data.__dict__["pagado"] = pago is not None
+        return data
+
     @computed_field  # type: ignore[misc]
     @property
     def asignacion(self) -> AsignacionEnIncidenteResponse | None:

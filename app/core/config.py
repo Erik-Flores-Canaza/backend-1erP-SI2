@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     FIREBASE_CREDENTIALS_PATH: str = "firebase_credentials.json"
     OPENAI_API_KEY: str = ""
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
 
     class Config:
         env_file = ".env"
