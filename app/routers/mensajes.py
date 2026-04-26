@@ -153,6 +153,18 @@ async def websocket_chat(incidente_id: UUID, websocket: WebSocket, token: str = 
                     _serializar(mensaje, usuario.nombre_completo),
                 )
 
+                # Notificar al admin_taller con badge cuando el cliente o técnico escribe
+                if _rol_label(usuario) in ("cliente", "tecnico"):
+                    asig = db.query(Asignacion).filter(
+                        Asignacion.incidente_id == incidente_id,
+                        Asignacion.accion_taller == "aceptado",
+                    ).first()
+                    if asig:
+                        taller_obj = db.query(Taller).filter(Taller.id == asig.taller_id).first()
+                        if taller_obj:
+                            from app.services.notificacion_service import notif_nuevo_mensaje_chat
+                            notif_nuevo_mensaje_chat(taller_obj.administrador_id, incidente_id)
+
         except WebSocketDisconnect:
             manager.disconnect(room_id, websocket)
 

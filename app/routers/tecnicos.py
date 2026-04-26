@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import time as dtime
+from app.core.timezone import now_bo
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,7 +15,7 @@ from app.models.turno_tecnico import TurnoTecnico
 from app.models.usuario import Usuario
 from app.schemas.asignacion import AsignacionResponse, OrdenActivaTecnicoResponse
 from app.schemas.tecnico import TecnicoCreate, TecnicoResponse, TecnicoUpdate
-from app.schemas.turno_tecnico import TurnoCreate, TurnoResponse
+from app.schemas.turno_tecnico import TurnoCreate, TurnoResponse, DIAS_SEMANA
 from app.services.tecnico_service import crear_tecnico
 
 
@@ -44,6 +45,55 @@ def get_my_perfil(
             detail="No tienes un perfil de técnico registrado.",
         )
     return tecnico
+
+
+@router.get("/me/servicios", response_model=list)
+def get_mis_servicios(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_tecnico),
+):
+    """
+    Devuelve el historial de órdenes completadas por el técnico autenticado,
+    incluyendo el estado e importe del pago asociado.
+    """
+    from app.models.pago import Pago
+    from app.models.usuario import Usuario as UsuarioModel
+    from app.schemas.pago import ServicioTecnicoItem
+
+    tecnico = db.query(Tecnico).filter(Tecnico.usuario_id == current_user.id).first()
+    if not tecnico:
+        return []
+
+    asignaciones = (
+        db.query(Asignacion)
+        .join(Incidente, Asignacion.incidente_id == Incidente.id)
+        .filter(
+            Asignacion.tecnico_id == tecnico.id,
+            Asignacion.accion_taller == "aceptado",
+            Asignacion.completado_en != None,  # noqa: E711
+        )
+        .order_by(Asignacion.completado_en.desc())
+        .all()
+    )
+
+    resultado = []
+    for asig in asignaciones:
+        inc: Incidente = asig.incidente
+        cliente = db.query(UsuarioModel).filter(UsuarioModel.id == inc.cliente_id).first()
+        pago = db.query(Pago).filter(Pago.incidente_id == inc.id).first()
+        resultado.append(
+            ServicioTecnicoItem(
+                incidente_id=inc.id,
+                cliente_nombre=cliente.nombre_completo if cliente else "–",
+                clasificacion_ia=inc.clasificacion_ia,
+                prioridad=inc.prioridad,
+                completado_en=asig.completado_en,
+                pago_estado=pago.estado if pago else None,
+                pago_monto=pago.monto_total if pago else None,
+                pago_metodo=pago.metodo_pago if pago else None,
+            )
+        )
+    return resultado
 
 
 @router.get("/me/orden-activa", response_model=OrdenActivaTecnicoResponse | None)
@@ -121,6 +171,10 @@ def delete_tecnico(
     db.commit()
 
 
+def _turno_to_response(turno: TurnoTecnico) -> TurnoResponse:
+    return TurnoResponse.from_orm_with_nombre(turno)
+
+
 @router.post("/{tecnico_id}/turnos", response_model=TurnoResponse, status_code=status.HTTP_201_CREATED)
 def create_turno(
     tecnico_id: UUID,
@@ -129,11 +183,21 @@ def create_turno(
     current_user: Usuario = Depends(require_admin_taller),
 ):
     tecnico = _get_tecnico_del_admin(tecnico_id, current_user, db)
+    # Evitar duplicado del mismo día
+    existente = db.query(TurnoTecnico).filter(
+        TurnoTecnico.tecnico_id == tecnico.id,
+        TurnoTecnico.dia_semana == body.dia_semana,
+    ).first()
+    if existente:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Ya existe un turno para {DIAS_SEMANA[body.dia_semana]}. Elimínalo primero.",
+        )
     turno = TurnoTecnico(tecnico_id=tecnico.id, **body.model_dump())
     db.add(turno)
     db.commit()
     db.refresh(turno)
-    return turno
+    return _turno_to_response(turno)
 
 
 @router.get("/{tecnico_id}/turnos", response_model=list[TurnoResponse])
@@ -144,7 +208,28 @@ def list_turnos(
 ):
     if not db.query(Tecnico).filter(Tecnico.id == tecnico_id).first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Técnico no encontrado")
-    return db.query(TurnoTecnico).filter(TurnoTecnico.tecnico_id == tecnico_id).all()
+    turnos = db.query(TurnoTecnico).filter(
+        TurnoTecnico.tecnico_id == tecnico_id,
+    ).order_by(TurnoTecnico.dia_semana).all()
+    return [_turno_to_response(t) for t in turnos]
+
+
+@router.delete("/{tecnico_id}/turnos/{turno_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_turno(
+    tecnico_id: UUID,
+    turno_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_taller),
+):
+    tecnico = _get_tecnico_del_admin(tecnico_id, current_user, db)
+    turno = db.query(TurnoTecnico).filter(
+        TurnoTecnico.id == turno_id,
+        TurnoTecnico.tecnico_id == tecnico.id,
+    ).first()
+    if not turno:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turno no encontrado")
+    db.delete(turno)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +289,7 @@ def actualizar_ubicacion(
 
     tecnico.latitud_actual = body.latitud
     tecnico.longitud_actual = body.longitud
-    tecnico.ubicacion_actualizada_en = datetime.now(timezone.utc)
+    tecnico.ubicacion_actualizada_en = now_bo()
     db.commit()
     db.refresh(tecnico)
     return tecnico

@@ -14,6 +14,7 @@ from app.models.notificacion import Notificacion
 from app.models.mensaje import Mensaje
 from app.models.metrica_taller import MetricaTaller
 from app.models.metrica_plataforma import MetricaPlataforma
+from app.models.solicitud_registro_taller import SolicitudRegistroTaller
 
 __all__ = [
     "Rol",
@@ -32,4 +33,5 @@ __all__ = [
     "Mensaje",
     "MetricaTaller",
     "MetricaPlataforma",
+    "SolicitudRegistroTaller",
 ]

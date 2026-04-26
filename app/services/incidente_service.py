@@ -57,8 +57,9 @@ def crear_incidente(db: Session, body: IncidenteCreate, cliente_id: UUID) -> Inc
 
 def analizar_incidente(incidente: Incidente, db: Session) -> Incidente:
     """
-    CU-18 + CU-19 + CU-20 — Paso 2: Se llama DESPUÉS de subir evidencias.
-    Procesa imágenes/audio con IA, genera resumen y dispara la asignación.
+    CU-18 + CU-19 — Paso 2: Procesa evidencias con IA y genera clasificación.
+    NO dispara asignación — el cliente verá la lista de candidatos y podrá elegir
+    o dejar que el sistema asigne automáticamente (ver seleccionar_taller / asignar_automatico).
     """
     # CU-18: procesar evidencias
     try:
@@ -74,13 +75,6 @@ def analizar_incidente(incidente: Incidente, db: Session) -> Incidente:
     incidente.confianza_ia     = resumen["confianza_ia"]
     incidente.resumen_ia       = resumen["resumen_ia"]
     incidente.prioridad        = resumen["prioridad"]
-
-    # CU-20: asignación inteligente — siempre se intenta, sin importar confianza IA.
-    # Aunque no haya evidencias (confianza=0), el incidente igual debe llegar a un taller.
-    try:
-        asignacion_service.asignar(incidente, db)
-    except HTTPException:
-        pass  # Sin talleres disponibles — incidente queda pendiente sin asignación
 
     db.commit()
     db.refresh(incidente)

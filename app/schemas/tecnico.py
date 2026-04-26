@@ -30,6 +30,7 @@ class TecnicoResponse(BaseModel):
     latitud_actual: float | None
     longitud_actual: float | None
     disponible: bool
+    disponible_ahora: bool = False   # calculado: tiene turno activo en este momento
 
 
 class TecnicoUpdate(BaseModel):

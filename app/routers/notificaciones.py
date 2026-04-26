@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from app.core.timezone import now_bo
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -44,7 +44,7 @@ def marcar_leida(
 
     if not notif.leida:
         notif.leida = True
-        notif.leida_en = datetime.now(timezone.utc)
+        notif.leida_en = now_bo()
         db.commit()
         db.refresh(notif)
 
@@ -57,7 +57,7 @@ def marcar_todas_leidas(
     current_user: Usuario = Depends(get_current_user),
 ):
     """Marca todas las notificaciones no leídas del usuario como leídas."""
-    ahora = datetime.now(timezone.utc)
+    ahora = now_bo()
     actualizadas = (
         db.query(Notificacion)
         .filter(Notificacion.usuario_id == current_user.id, Notificacion.leida == False)  # noqa: E712

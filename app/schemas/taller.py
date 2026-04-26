@@ -84,6 +84,9 @@ class TallerResponse(BaseModel):
     porcentaje_comision: float
     activo: bool
     disponible: bool
+    # CU-23: estado de aprobación del taller
+    estado_aprobacion: str | None
+    motivo_rechazo: str | None
     creado_en: datetime
 
 
@@ -93,3 +96,25 @@ class TallerUpdate(BaseModel):
     latitud: float | None = None
     longitud: float | None = None
     disponible: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# CU-27: Métricas consolidadas de todas las sucursales de un admin_taller
+# ---------------------------------------------------------------------------
+
+class MetricasSucursalResumen(BaseModel):
+    """Resumen de métricas de una sucursal individual dentro del consolidado."""
+    taller_id: UUID
+    nombre: str
+    total_atenciones: int
+    tasa_aceptacion: float | None
+    ingresos_neto_total: float
+
+
+class MetricasConsolidadasResponse(BaseModel):
+    """Respuesta de GET /talleres/metricas — suma de todas las sucursales."""
+    total_sucursales: int
+    total_atenciones: int
+    ingresos_neto_total: float
+    tasa_aceptacion_global: float | None
+    por_sucursal: list[MetricasSucursalResumen]

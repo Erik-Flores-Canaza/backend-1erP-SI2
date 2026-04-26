@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from app.core.timezone import now_bo
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -160,7 +160,7 @@ def responder_asignacion(
         )
 
     asignacion.accion_taller = body.accion_taller
-    asignacion.taller_respondio_en = datetime.now(timezone.utc)
+    asignacion.taller_respondio_en = now_bo()
     if body.eta_minutos:
         asignacion.eta_minutos = body.eta_minutos
 
@@ -368,7 +368,7 @@ def completar_servicio(
             detail="La orden ya fue marcada como completada",
         )
 
-    asignacion.completado_en = datetime.now(timezone.utc)
+    asignacion.completado_en = now_bo()
 
     # Liberar técnico y taller
     tecnico.disponible = True

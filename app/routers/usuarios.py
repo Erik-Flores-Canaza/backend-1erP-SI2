@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
@@ -39,4 +40,19 @@ def change_password(
             detail="La contraseña actual es incorrecta",
         )
     current_user.hash_contrasena = hash_password(body.nueva_contrasena)
+    db.commit()
+
+
+class FcmTokenRequest(BaseModel):
+    fcm_token: str
+
+
+@router.patch("/me/fcm-token", status_code=status.HTTP_204_NO_CONTENT)
+def update_fcm_token(
+    body: FcmTokenRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Registra o actualiza el token FCM del dispositivo del usuario autenticado."""
+    current_user.fcm_token = body.fcm_token
     db.commit()

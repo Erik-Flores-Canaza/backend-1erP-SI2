@@ -68,3 +68,7 @@ def require_admin_taller(current_user: Usuario = Depends(get_current_user)) -> U
 
 def require_tecnico(current_user: Usuario = Depends(get_current_user)) -> Usuario:
     return _require_rol("tecnico", current_user)
+
+
+def require_superadmin(current_user: Usuario = Depends(get_current_user)) -> Usuario:
+    return _require_rol("superadmin", current_user)

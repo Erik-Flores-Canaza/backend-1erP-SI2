@@ -6,6 +6,7 @@ ROLES = [
     {"nombre": "cliente", "descripcion": "Conductor que reporta emergencias vehiculares"},
     {"nombre": "admin_taller", "descripcion": "Administrador de un taller mecánico"},
     {"nombre": "tecnico", "descripcion": "Técnico que atiende emergencias en campo"},
+    {"nombre": "superadmin", "descripcion": "Administrador global de la plataforma"},
 ]
 
 

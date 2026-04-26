@@ -20,9 +20,13 @@ from app.routers import (
     usuarios,
     vehiculos,
 )
+from app.routers.admin import admin_router, public_router as solicitudes_public_router
 from app.routers.mensajes import http_router as mensajes_http_router
 from app.routers.mensajes import ws_router as mensajes_ws_router
 from app.routers.pagos import router as pagos_router
+from app.routers.ws_notificaciones import router as ws_notif_router
+from app.services.fcm_service import init_firebase
+import app.models.taller_favorito  # noqa: F401 — registra la tabla en SQLAlchemy
 
 # Inicializar Stripe con la clave secreta
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -33,12 +37,19 @@ Path("uploads").mkdir(exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Guardar el event loop para que los endpoints síncronos puedan emitir por WS
+    import asyncio
+    from app.services import notificacion_service
+    notificacion_service._main_loop = asyncio.get_running_loop()
+
     # Seed inicial: inserta los 3 roles si no existen
     db = SessionLocal()
     try:
         seed_roles(db)
     finally:
         db.close()
+    # Inicializar Firebase (no-op si no está configurado)
+    init_firebase()
     yield
 
 
@@ -57,7 +68,7 @@ app = FastAPI(
         {"name": "Autenticación",   "description": "Login, registro, refresh y logout (CU-01, CU-02)"},
         {"name": "Usuarios",        "description": "Gestión de perfil propio (CU-03)"},
         {"name": "Vehículos",       "description": "CRUD de vehículos del cliente (CU-04)"},
-        {"name": "Talleres",        "description": "Registro de talleres, servicios, historial y métricas (CU-10, CU-15)"},
+        {"name": "Talleres",        "description": "Registro de talleres, servicios, historial y métricas (CU-10, CU-15, CU-26, CU-27)"},
         {"name": "Técnicos",        "description": "Gestión de técnicos, turnos y ubicación (CU-11, CU-16)"},
         {"name": "Incidentes",      "description": "Reportar y monitorear emergencias (CU-05, CU-06, CU-14)"},
         {"name": "Evidencias",      "description": "Subida de archivos de evidencia — imagen, audio, texto (CU-05)"},
@@ -66,6 +77,8 @@ app = FastAPI(
         {"name": "Mensajes",        "description": "Historial de chat cliente-taller (CU-08)"},
         {"name": "Chat WebSocket",  "description": "Chat en tiempo real vía WebSocket (CU-08)"},
         {"name": "Notificaciones",  "description": "Notificaciones automáticas y gestión manual (CU-21, CU-09)"},
+        {"name": "Superadmin — Solicitudes (público)", "description": "Formulario público de solicitud de registro de taller (CU-22)"},
+        {"name": "Superadmin — Panel", "description": "Panel de administración global — solo rol superadmin (CU-23, CU-24, CU-25)"},
         {"name": "Health",          "description": "Verificación de estado del servidor"},
     ],
 )
@@ -98,6 +111,11 @@ app.include_router(notificaciones.router)
 app.include_router(pagos_router)
 app.include_router(mensajes_http_router)
 app.include_router(mensajes_ws_router, prefix="/ws")
+app.include_router(ws_notif_router, prefix="/ws")
+
+# ── Ciclo 3+ — Superadmin & Multi-sucursal ───────────────────────────────────
+app.include_router(solicitudes_public_router)   # POST /solicitudes-taller (CU-22)
+app.include_router(admin_router)                # /admin/* (CU-23, CU-24, CU-25)
 
 
 @app.get("/health", tags=["Health"])

@@ -4,6 +4,8 @@ Selecciona el taller más adecuado para un incidente considerando:
   1. Distancia (Haversine) al incidente
   2. Tipo de servicio compatible con la clasificación IA
   3. Disponibilidad del taller (activo + disponible)
+  4. Cobertura de turno activo (al menos 1 técnico en turno ahora)
+  5. Prioridad del incidente (alta > media > baja > incierto) en la cola pendiente
 
 Si el taller rechaza la solicitud, la función reasignar() busca el siguiente
 candidato de la lista ordenada por distancia, excluyendo talleres ya intentados.
@@ -11,6 +13,7 @@ candidato de la lista ordenada por distancia, excluyendo talleres ya intentados.
 from __future__ import annotations
 
 import math
+from app.core.timezone import now_bo
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -20,6 +23,8 @@ from app.models.asignacion import Asignacion
 from app.models.incidente import Incidente
 from app.models.servicio_taller import ServicioTaller
 from app.models.taller import Taller
+from app.models.tecnico import Tecnico
+from app.models.turno_tecnico import TurnoTecnico
 from app.services import notificacion_service
 
 # ---------------------------------------------------------------------------
@@ -45,6 +50,32 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _taller_tiene_cobertura(taller_id: UUID, db: Session) -> bool:
+    """
+    Un taller tiene cobertura si existe al menos un técnico que:
+    - Tiene turno programado para el día de la semana actual
+    - La hora actual está dentro del rango hora_inicio–hora_fin
+    - No está ocupado (Tecnico.disponible = True)
+    """
+    ahora = now_bo()
+    dia_hoy = ahora.weekday()          # 0=Lun … 6=Dom  (igual que dia_semana)
+    hora_ahora = ahora.time().replace(tzinfo=None)
+
+    tiene = (
+        db.query(TurnoTecnico)
+        .join(Tecnico, TurnoTecnico.tecnico_id == Tecnico.id)
+        .filter(
+            Tecnico.taller_id == taller_id,
+            Tecnico.disponible == True,
+            TurnoTecnico.dia_semana == dia_hoy,
+            TurnoTecnico.hora_inicio <= hora_ahora,
+            TurnoTecnico.hora_fin > hora_ahora,
+        )
+        .first()
+    )
+    return tiene is not None
+
+
 def _talleres_candidatos(
     incidente: Incidente,
     db: Session,
@@ -52,18 +83,21 @@ def _talleres_candidatos(
 ) -> list[Taller]:
     """
     Devuelve la lista de talleres válidos ordenados de más cercano a más lejano.
-    Filtra por disponibilidad y tipo de servicio compatible.
+    Filtra por:
+      1. Activo + disponible + aprobado
+      2. Tipo de servicio compatible con clasificación IA
+      3. Cobertura de turno ahora mismo (al menos 1 técnico disponible)
     """
     excluir_ids = excluir_ids or []
     clasificacion = incidente.clasificacion_ia or "otro"
     tipos_compatibles = _CLASIFICACION_SERVICIOS.get(clasificacion, ["otro"])
 
-    # Talleres activos y disponibles, no excluidos
     talleres = (
         db.query(Taller)
         .filter(
             Taller.activo == True,
             Taller.disponible == True,
+            Taller.estado_aprobacion == "aprobado",
             Taller.id.notin_(excluir_ids),
         )
         .all()
@@ -81,6 +115,9 @@ def _talleres_candidatos(
     }
     talleres = [t for t in talleres if t.id in taller_ids_con_servicio]
 
+    # Filtrar por cobertura de turno activa ahora mismo
+    talleres = [t for t in talleres if _taller_tiene_cobertura(t.id, db)]
+
     # Ordenar por distancia si el incidente tiene coordenadas
     if incidente.latitud is not None and incidente.longitud is not None:
         def _distancia(t: Taller) -> float:
@@ -95,16 +132,78 @@ def _talleres_candidatos(
     return talleres
 
 
+def candidatos_para_incidente(
+    incidente: Incidente,
+    db: Session,
+    cliente_id: "UUID | None" = None,
+    excluir_ids: "list[UUID] | None" = None,
+) -> list[dict]:
+    """
+    Devuelve la lista de talleres candidatos enriquecida con distancia, ETA,
+    servicios compatibles y si es favorito del cliente.
+    Usada por el endpoint GET /incidentes/{id}/candidatos.
+    """
+    from app.models.taller_favorito import TallerFavorito
+    from app.models.servicio_taller import ServicioTaller as ST
+
+    clasificacion = incidente.clasificacion_ia or "otro"
+    tipos_compatibles = _CLASIFICACION_SERVICIOS.get(clasificacion, ["otro"])
+
+    favoritos: set[UUID] = set()
+    if cliente_id:
+        favoritos = {
+            f.taller_id
+            for f in db.query(TallerFavorito)
+            .filter(TallerFavorito.cliente_id == cliente_id)
+            .all()
+        }
+
+    talleres = _talleres_candidatos(incidente, db, excluir_ids=excluir_ids)
+
+    resultado = []
+    for t in talleres:
+        dist: float | None = None
+        eta: int | None = None
+        if (incidente.latitud is not None and incidente.longitud is not None
+                and t.latitud is not None and t.longitud is not None):
+            dist = round(_haversine_km(
+                float(incidente.latitud), float(incidente.longitud),
+                float(t.latitud), float(t.longitud),
+            ), 2)
+            # ETA: distancia / 30 km/h → minutos, mínimo 5
+            eta = max(5, int(dist / 30 * 60))
+
+        servicios = [
+            s.tipo_servicio
+            for s in db.query(ST)
+            .filter(
+                ST.taller_id == t.id,
+                ST.tipo_servicio.in_(tipos_compatibles),
+                ST.disponible == True,
+            )
+            .all()
+        ]
+
+        resultado.append({
+            "id": t.id,
+            "nombre": t.nombre,
+            "direccion": t.direccion,
+            "distancia_km": dist,
+            "eta_minutos": eta,
+            "tipo_servicios": servicios,
+            "es_favorito": t.id in favoritos,
+        })
+
+    # Ordenar: favoritos primero, luego por distancia
+    resultado.sort(key=lambda x: (not x["es_favorito"], x["distancia_km"] or 9999))
+    return resultado
+
+
 def asignar(incidente: Incidente, db: Session) -> Asignacion | None:
     """
-    Selecciona el taller más adecuado y crea el registro de ASIGNACION.
+    Selecciona automáticamente el taller más adecuado y crea el ASIGNACION.
     Lanza excepción si no hay talleres disponibles.
-    Retorna None si confianza_ia < 0.5 (prioridad 'incierto').
     """
-    # Regla de negocio: no asignar si la IA no tiene confianza suficiente
-    if (incidente.confianza_ia is not None) and (incidente.confianza_ia < 0.5):
-        return None
-
     candidatos = _talleres_candidatos(incidente, db)
     if not candidatos:
         raise HTTPException(
@@ -112,15 +211,37 @@ def asignar(incidente: Incidente, db: Session) -> Asignacion | None:
             detail="No hay talleres disponibles para atender esta emergencia.",
         )
 
-    taller = candidatos[0]
+    return _crear_asignacion(incidente, candidatos[0], db)
+
+
+def asignar_especifico(
+    incidente: Incidente,
+    taller_id: "UUID",
+    db: Session,
+) -> Asignacion:
+    """
+    El cliente eligió manualmente un taller de la lista de candidatos.
+    Verifica que sigue siendo candidato válido y crea la asignación.
+    """
+    candidatos = _talleres_candidatos(incidente, db)
+    taller = next((t for t in candidatos if t.id == taller_id), None)
+    if not taller:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El taller seleccionado ya no está disponible. Elige otro.",
+        )
+    return _crear_asignacion(incidente, taller, db)
+
+
+def _crear_asignacion(incidente: Incidente, taller: "Taller", db: Session) -> Asignacion:
+    """Crea el registro Asignacion y emite la notificación al taller."""
     asignacion = Asignacion(
         incidente_id=incidente.id,
         taller_id=taller.id,
     )
     db.add(asignacion)
-    db.flush()  # Obtener id sin commit para que el caller pueda hacer commit junto con notificaciones
+    db.flush()
 
-    # Notificación CU-21: taller asignado
     notificacion_service.notif_taller_asignado(
         db,
         cliente_id=incidente.cliente_id,
@@ -128,15 +249,17 @@ def asignar(incidente: Incidente, db: Session) -> Asignacion | None:
         incidente_id=incidente.id,
         nombre_taller=taller.nombre,
     )
-
     return asignacion
+
+
+_PRIORIDAD_ORDEN = {"alta": 0, "media": 1, "baja": 2, "incierto": 3}
 
 
 def intentar_asignar_pendientes(db: Session) -> None:
     """
     Llamado cuando un nuevo taller o servicio queda disponible.
     Busca incidentes pendientes sin asignación activa y los asigna al taller
-    más cercano disponible.
+    más cercano disponible, priorizando los de mayor urgencia.
     """
     # Incidentes que ya tienen asignación pendiente o aceptada (activos)
     subq = (
@@ -151,11 +274,16 @@ def intentar_asignar_pendientes(db: Session) -> None:
         db.query(Incidente)
         .filter(
             Incidente.estado == "pendiente",
-            Incidente.confianza_ia >= 0.5,
             ~Incidente.id.in_(subq),
         )
         .all()
     )
+
+    # Ordenar por prioridad: alta → media → baja → incierto, luego por fecha
+    pendientes.sort(key=lambda inc: (
+        _PRIORIDAD_ORDEN.get(inc.prioridad or "incierto", 3),
+        inc.creado_en,
+    ))
 
     for incidente in pendientes:
         try:
@@ -169,7 +297,6 @@ def reasignar(asignacion_rechazada: Asignacion, db: Session) -> Asignacion | Non
     Llamado cuando un taller rechaza la solicitud (CU-12).
     Busca el siguiente candidato excluyendo los talleres ya intentados.
     """
-    # Obtener todos los talleres ya intentados para este incidente
     talleres_intentados = [
         a.taller_id
         for a in db.query(Asignacion)
@@ -181,24 +308,6 @@ def reasignar(asignacion_rechazada: Asignacion, db: Session) -> Asignacion | Non
     candidatos = _talleres_candidatos(incidente, db, excluir_ids=talleres_intentados)
 
     if not candidatos:
-        # No hay más talleres — el incidente queda sin asignación activa
         return None
 
-    taller = candidatos[0]
-    nueva_asignacion = Asignacion(
-        incidente_id=incidente.id,
-        taller_id=taller.id,
-    )
-    db.add(nueva_asignacion)
-    db.flush()
-
-    # Notificación CU-21: nuevo taller asignado
-    notificacion_service.notif_taller_asignado(
-        db,
-        cliente_id=incidente.cliente_id,
-        admin_taller_id=taller.administrador_id,
-        incidente_id=incidente.id,
-        nombre_taller=taller.nombre,
-    )
-
-    return nueva_asignacion
+    return _crear_asignacion(incidente, candidatos[0], db)

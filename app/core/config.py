@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
 
+    # Gmail OAuth (envío de credenciales temporales a admin_taller)
+    GMAIL_CLIENT_ID: str = ""
+    GMAIL_CLIENT_SECRET: str = ""
+    GMAIL_REFRESH_TOKEN: str = ""
+    GMAIL_SENDER_EMAIL: str = ""
+
     class Config:
         env_file = ".env"
 

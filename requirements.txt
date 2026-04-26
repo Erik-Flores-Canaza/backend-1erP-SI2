@@ -11,3 +11,14 @@ pydantic[email]==2.7.1
 pydantic-settings==2.2.1
 openai>=1.30.0
 stripe>=9.0.0
+
+# Gmail OAuth (envío de correos — CU-23)
+google-auth>=2.29.0
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.127.0
+
+# Zona horaria en Windows (zoneinfo lo requiere)
+tzdata>=2024.1
+
+# Firebase Admin SDK (envío de notificaciones push FCM)
+firebase-admin>=6.5.0

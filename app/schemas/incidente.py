@@ -131,10 +131,10 @@ class IncidenteResponse(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def extract_pagado(cls, data: Any) -> Any:
-        # Si viene un ORM object, leer la relación `pago` y convertirla a bool
+        # pagado = True solo cuando el pago existe Y ya está confirmado (estado='pagado')
         if not isinstance(data, dict):
             pago = getattr(data, "pago", None)
-            data.__dict__["pagado"] = pago is not None
+            data.__dict__["pagado"] = pago is not None and getattr(pago, "estado", None) == "pagado"
         return data
 
     @computed_field  # type: ignore[misc]

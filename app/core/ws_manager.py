@@ -38,3 +38,38 @@ class ConnectionManager:
 
 # Singleton compartido por toda la aplicación
 manager = ConnectionManager()
+
+
+class UserConnectionManager:
+    """
+    Gestor de conexiones WebSocket agrupadas por usuario_id.
+    Usado para notificaciones en tiempo real al panel web (admin_taller).
+    """
+
+    def __init__(self) -> None:
+        self.active_connections: dict[str, list[WebSocket]] = {}
+
+    async def connect(self, usuario_id: str, websocket: WebSocket) -> None:
+        await websocket.accept()
+        if usuario_id not in self.active_connections:
+            self.active_connections[usuario_id] = []
+        self.active_connections[usuario_id].append(websocket)
+
+    def disconnect(self, usuario_id: str, websocket: WebSocket) -> None:
+        room = self.active_connections.get(usuario_id, [])
+        if websocket in room:
+            room.remove(websocket)
+        if not room:
+            self.active_connections.pop(usuario_id, None)
+
+    async def send(self, usuario_id: str, message: dict[str, Any]) -> None:
+        """Envía un mensaje JSON a todas las conexiones activas del usuario."""
+        for ws in list(self.active_connections.get(usuario_id, [])):
+            try:
+                await ws.send_json(message)
+            except Exception:
+                self.disconnect(usuario_id, ws)
+
+
+# Singleton para notificaciones por usuario
+user_manager = UserConnectionManager()
