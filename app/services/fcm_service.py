@@ -1,10 +1,16 @@
 """
 Firebase Cloud Messaging — envío de push notifications a Flutter.
 Se inicializa una sola vez al arrancar la app (lifespan).
-Si FIREBASE_CREDENTIALS_PATH no está configurado, las funciones son no-op.
+
+Orden de prioridad para las credenciales:
+  1. FIREBASE_CREDENTIALS_JSON  — variable de entorno con el JSON completo (Railway/producción).
+  2. FIREBASE_CREDENTIALS_PATH  — ruta a un archivo .json en disco (desarrollo local).
+
+Si ninguna está configurada, las funciones son no-op silenciosas.
 """
 from __future__ import annotations
 
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,17 +26,28 @@ def init_firebase() -> None:
         from firebase_admin import credentials
         from app.core.config import settings
 
-        cred_path = getattr(settings, "FIREBASE_CREDENTIALS_PATH", None)
-        if not cred_path:
-            logger.warning("FCM: FIREBASE_CREDENTIALS_PATH no configurado — push desactivado")
+        if firebase_admin._apps:
+            _initialized = True
             return
 
-        if not firebase_admin._apps:
-            cred = credentials.Certificate(cred_path)
+        # 1. Variable de entorno con el JSON completo (Railway)
+        if settings.FIREBASE_CREDENTIALS_JSON:
+            cred_dict = json.loads(settings.FIREBASE_CREDENTIALS_JSON)
+            cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
+            _initialized = True
+            logger.info("FCM: Firebase inicializado desde variable de entorno")
+            return
 
-        _initialized = True
-        logger.info("FCM: Firebase inicializado correctamente")
+        # 2. Archivo en disco (desarrollo local)
+        if settings.FIREBASE_CREDENTIALS_PATH:
+            cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+            firebase_admin.initialize_app(cred)
+            _initialized = True
+            logger.info("FCM: Firebase inicializado desde archivo %s", settings.FIREBASE_CREDENTIALS_PATH)
+            return
+
+        logger.warning("FCM: Sin credenciales configuradas — push desactivado")
     except Exception as e:
         logger.warning(f"FCM: No se pudo inicializar Firebase — {e}")
 
