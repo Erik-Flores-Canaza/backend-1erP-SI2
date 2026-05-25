@@ -57,12 +57,14 @@ def _puede_acceder_chat(usuario: Usuario, incidente: Incidente, db: Session) -> 
         return incidente.cliente_id == usuario.id
 
     if nombre_rol == "admin_taller":
-        taller = db.query(Taller).filter(Taller.administrador_id == usuario.id).first()
-        if not taller:
+        taller_ids = [
+            r[0] for r in db.query(Taller.id).filter(Taller.administrador_id == usuario.id).all()
+        ]
+        if not taller_ids:
             return False
         asignacion = db.query(Asignacion).filter(
             Asignacion.incidente_id == incidente.id,
-            Asignacion.taller_id == taller.id,
+            Asignacion.taller_id.in_(taller_ids),
             Asignacion.accion_taller == "aceptado",
         ).first()
         return asignacion is not None

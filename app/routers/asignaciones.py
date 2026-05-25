@@ -25,10 +25,14 @@ router = APIRouter(tags=["Asignaciones"])
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_taller_del_admin(admin: Usuario, db: Session) -> Taller:
-    taller = db.query(Taller).filter(Taller.administrador_id == admin.id).first()
+def _verificar_acceso_taller(admin: Usuario, taller_id: UUID, db: Session) -> Taller:
+    """Verifica que el admin es dueño del taller de la asignación (soporta multi-taller)."""
+    taller = db.query(Taller).filter(
+        Taller.id == taller_id,
+        Taller.administrador_id == admin.id,
+    ).first()
     if not taller:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No tienes un taller registrado")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sin acceso a esta asignación")
     return taller
 
 
@@ -147,11 +151,7 @@ def responder_asignacion(
         )
 
     asignacion = _get_asignacion(asignacion_id, db)
-
-    # Verificar que la asignación pertenece al taller del admin
-    taller = _get_taller_del_admin(current_user, db)
-    if asignacion.taller_id != taller.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sin acceso a esta asignación")
+    taller = _verificar_acceso_taller(current_user, asignacion.taller_id, db)
 
     if asignacion.accion_taller is not None:
         raise HTTPException(
@@ -211,10 +211,7 @@ def asignar_tecnico(
     Valida: técnico pertenece al taller, técnico disponible, sin orden activa.
     """
     asignacion = _get_asignacion(asignacion_id, db)
-    taller = _get_taller_del_admin(current_user, db)
-
-    if asignacion.taller_id != taller.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sin acceso a esta asignación")
+    taller = _verificar_acceso_taller(current_user, asignacion.taller_id, db)
 
     if asignacion.accion_taller != "aceptado":
         raise HTTPException(

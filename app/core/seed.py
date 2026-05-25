@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-
+#Recarga con los roles a la base de datos en la primer carga
 from app.models.rol import Rol
 
 ROLES = [
