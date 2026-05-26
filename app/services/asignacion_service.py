@@ -234,12 +234,18 @@ def asignar_especifico(
 
 
 def _crear_asignacion(incidente: Incidente, taller: "Taller", db: Session) -> Asignacion:
-    """Crea el registro Asignacion y emite la notificación al taller."""
+    """Crea el registro Asignacion, propaga tenant_id al incidente y notifica al taller."""
     asignacion = Asignacion(
+        tenant_id=taller.tenant_id,  # asignación hereda tenant del taller
         incidente_id=incidente.id,
         taller_id=taller.id,
     )
     db.add(asignacion)
+
+    # Propagar tenant_id al incidente (queda anclado al tenant del taller ganador)
+    if incidente.tenant_id is None:
+        incidente.tenant_id = taller.tenant_id
+
     db.flush()
 
     notificacion_service.notif_taller_asignado(

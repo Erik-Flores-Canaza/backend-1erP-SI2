@@ -28,6 +28,7 @@ def crear_tecnico(db: Session, body: TecnicoCreate, admin_id) -> Tecnico:
 
     usuario = Usuario(
         rol_id=rol.id,
+        tenant_id=taller.tenant_id,  # técnico hereda tenant del taller
         nombre_completo=body.nombre_completo,
         correo=body.correo,
         hash_contrasena=hash_password(body.contrasena),
@@ -36,7 +37,11 @@ def crear_tecnico(db: Session, body: TecnicoCreate, admin_id) -> Tecnico:
     db.add(usuario)
     db.flush()  # obtiene el UUID antes del commit
 
-    tecnico = Tecnico(usuario_id=usuario.id, taller_id=body.taller_id)
+    tecnico = Tecnico(
+        tenant_id=taller.tenant_id,
+        usuario_id=usuario.id,
+        taller_id=body.taller_id,
+    )
     db.add(tecnico)
     db.commit()
     db.refresh(tecnico)

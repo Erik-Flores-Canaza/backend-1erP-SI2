@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.tenant_context import verificar_acceso_tenant
 from app.dependencies import get_current_user, get_db, require_admin_taller, require_cliente
 from app.models.asignacion import Asignacion
 from app.models.incidente import Incidente
@@ -97,7 +98,14 @@ def create_taller(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tu cuenta no tiene talleres aprobados. Espera la aprobación de tu solicitud.",
         )
+    # Multi-tenant: la sucursal hereda el tenant del usuario admin_taller
+    if current_user.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tu usuario no tiene tenant asignado. Contacta al superadmin.",
+        )
     taller = Taller(
+        tenant_id=current_user.tenant_id,
         administrador_id=current_user.id,
         estado_aprobacion="aprobado",  # sucursales adicionales heredan aprobación
         **body.model_dump(),
@@ -299,11 +307,16 @@ def quitar_favorito(
 def get_taller(
     taller_id: UUID,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     taller = db.query(Taller).filter(Taller.id == taller_id).first()
     if not taller:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Taller no encontrado")
+    # Cliente global y superadmin_plataforma ven cualquier taller (para selección de candidatos).
+    # admin_taller/admin_tenant/tecnico solo ven talleres de su tenant.
+    rol = current_user.rol.nombre if current_user.rol else ""
+    if rol not in ("cliente", "superadmin_plataforma"):
+        verificar_acceso_tenant(taller.tenant_id, current_user, nombre_recurso="taller")
     sincronizar_disponible(taller, db)
     return taller
 

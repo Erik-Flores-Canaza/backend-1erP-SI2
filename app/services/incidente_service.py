@@ -100,6 +100,7 @@ def registrar_cambio_estado(
         )
 
     historial = HistorialServicio(
+        tenant_id=incidente.tenant_id,  # hereda tenant del incidente (puede ser NULL)
         incidente_id=incidente.id,
         cambiado_por=cambiado_por_id,
         estado_anterior=incidente.estado,

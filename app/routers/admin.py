@@ -20,12 +20,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.tenant_context import aplicar_filtro_tenant, es_cross_tenant
 from app.dependencies import get_db, get_current_user, require_superadmin
 from app.models.asignacion import Asignacion
 from app.models.incidente import Incidente
 from app.models.pago import Pago
 from app.models.solicitud_registro_taller import SolicitudRegistroTaller
 from app.models.taller import Taller
+from app.models.tenant import Tenant
 from app.models.usuario import Usuario
 from app.schemas.solicitud_registro import (
     AprobacionResponse,
@@ -61,11 +63,33 @@ def crear_solicitud_taller(
 ):
     """
     Endpoint público: cualquier persona puede enviar una solicitud para
-    registrar su taller. No requiere JWT.
+    registrar su taller en un tenant existente. No requiere JWT.
 
-    El superadmin la revisa desde el panel (/admin/solicitudes-taller).
+    Multi-tenant: si el body trae `tenant_slug`, se vincula a ese tenant.
+    Si no, se usa el primer tenant activo (modo dev). En producción se
+    espera que la landing siempre envíe `tenant_slug`.
     """
+    # Resolver tenant
+    tenant: Tenant | None = None
+    if body.tenant_slug:
+        tenant = db.query(Tenant).filter(
+            Tenant.slug == body.tenant_slug, Tenant.activo == True  # noqa: E712
+        ).first()
+        if not tenant:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tenant '{body.tenant_slug}' no encontrado o inactivo",
+            )
+    else:
+        tenant = db.query(Tenant).filter(Tenant.activo == True).order_by(Tenant.creado_en).first()  # noqa: E712
+        if not tenant:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No hay tenants activos en la plataforma. Solicita primero alta como tenant.",
+            )
+
     solicitud = SolicitudRegistroTaller(
+        tenant_id=tenant.id,
         solicitante_nombre=body.solicitante_nombre,
         solicitante_correo=body.solicitante_correo,
         solicitante_telefono=body.solicitante_telefono,
@@ -94,10 +118,16 @@ def crear_solicitud_taller(
 def listar_solicitudes(
     estado: str | None = Query(None, description="Filtrar por estado: pendiente / aprobado / rechazado"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_superadmin),
+    current_user: Usuario = Depends(require_superadmin),
 ):
-    """Lista todas las solicitudes de registro. Filtro opcional por estado."""
+    """Lista solicitudes de registro de taller del tenant del admin.
+
+    Multi-tenant:
+    - admin_tenant: solo solicitudes de su tenant
+    - superadmin_plataforma: todas las solicitudes (cross-tenant)
+    """
     q = db.query(SolicitudRegistroTaller)
+    q = aplicar_filtro_tenant(q, SolicitudRegistroTaller, current_user)
     if estado:
         q = q.filter(SolicitudRegistroTaller.estado == estado)
     return q.order_by(SolicitudRegistroTaller.creado_en.desc()).all()
@@ -118,12 +148,21 @@ def aprobar_solicitud(
     1. Crea el Usuario con rol admin_taller.
     2. Crea el Taller con estado_aprobacion = 'aprobado'.
     3. Genera contraseña temporal → la devuelve en el body Y la envía por correo.
+
+    Multi-tenant: admin_tenant solo aprueba solicitudes de su tenant.
     """
     solicitud = db.query(SolicitudRegistroTaller).filter(
         SolicitudRegistroTaller.id == solicitud_id
     ).first()
     if not solicitud:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solicitud no encontrada")
+
+    # Verificar acceso por tenant (admin_tenant solo su tenant; superadmin_plataforma cualquiera)
+    if not es_cross_tenant(superadmin) and solicitud.tenant_id != superadmin.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sin acceso a solicitud de otro tenant",
+        )
 
     usuario, taller, contrasena = admin_service.aprobar_solicitud(
         db=db,
@@ -164,12 +203,22 @@ def rechazar_solicitud(
     db: Session = Depends(get_db),
     superadmin: Usuario = Depends(require_superadmin),
 ):
-    """Rechaza la solicitud registrando el motivo y notificando al solicitante."""
+    """Rechaza la solicitud registrando el motivo y notificando al solicitante.
+
+    Multi-tenant: admin_tenant solo rechaza solicitudes de su tenant.
+    """
     solicitud = db.query(SolicitudRegistroTaller).filter(
         SolicitudRegistroTaller.id == solicitud_id
     ).first()
     if not solicitud:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solicitud no encontrada")
+
+    # Verificar acceso por tenant
+    if not es_cross_tenant(superadmin) and solicitud.tenant_id != superadmin.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sin acceso a solicitud de otro tenant",
+        )
 
     return admin_service.rechazar_solicitud(
         db=db,
@@ -192,11 +241,17 @@ def listar_usuarios(
     rol: str | None = Query(None, description="Filtrar por nombre de rol"),
     activo: bool | None = Query(None, description="Filtrar por activo/inactivo"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_superadmin),
+    current_user: Usuario = Depends(require_superadmin),
 ):
-    """Lista todos los usuarios. Filtros opcionales: rol y activo."""
+    """Lista usuarios del tenant del admin.
+
+    Multi-tenant:
+    - admin_tenant: solo usuarios de su tenant (admin_taller, tecnico, admin_tenant del tenant)
+    - superadmin_plataforma: TODOS los usuarios cross-tenant (incluyendo clientes globales)
+    """
     from app.models.rol import Rol
     q = db.query(Usuario).join(Rol, Usuario.rol_id == Rol.id)
+    q = aplicar_filtro_tenant(q, Usuario, current_user)
     if rol:
         q = q.filter(Rol.nombre == rol)
     if activo is not None:
@@ -212,12 +267,19 @@ def listar_usuarios(
 def activar_usuario(
     usuario_id: UUID,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_superadmin),
+    current_user: Usuario = Depends(require_superadmin),
 ):
-    """Solo el superadmin puede activar cuentas."""
+    """Activa una cuenta. admin_tenant solo dentro de su tenant; superadmin_plataforma cross-tenant."""
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    # Multi-tenant: admin_tenant solo puede operar sobre usuarios de su tenant
+    if not es_cross_tenant(current_user):
+        if usuario.tenant_id != current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sin acceso a usuario de otro tenant",
+            )
     if usuario.activo:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El usuario ya está activo")
     usuario.activo = True
@@ -236,7 +298,9 @@ def desactivar_usuario(
     db: Session = Depends(get_db),
     superadmin: Usuario = Depends(require_superadmin),
 ):
-    """Solo el superadmin puede desactivar cuentas. No puede desactivarse a sí mismo."""
+    """Desactiva una cuenta. admin_tenant solo dentro de su tenant; superadmin_plataforma cross-tenant.
+    No puede desactivarse a sí mismo.
+    """
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
@@ -245,6 +309,13 @@ def desactivar_usuario(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No puedes desactivar tu propia cuenta",
         )
+    # Multi-tenant: admin_tenant solo puede operar sobre usuarios de su tenant
+    if not es_cross_tenant(superadmin):
+        if usuario.tenant_id != superadmin.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sin acceso a usuario de otro tenant",
+            )
     if not usuario.activo:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El usuario ya está inactivo")
     usuario.activo = False
@@ -265,7 +336,7 @@ def metricas_globales(
     fecha_inicio: date | None = Query(None, description="Fecha inicio del filtro (YYYY-MM-DD)"),
     fecha_fin: date | None = Query(None, description="Fecha fin del filtro (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_superadmin),
+    current_user: Usuario = Depends(require_superadmin),
 ):
     """
     Métricas globales del sistema con filtro opcional por rango de fechas:
@@ -292,6 +363,7 @@ def metricas_globales(
 
     # ── Incidentes ────────────────────────────────────────────────────────────
     q_inc = db.query(Incidente)
+    q_inc = aplicar_filtro_tenant(q_inc, Incidente, current_user)
     if fecha_inicio:
         q_inc = q_inc.filter(Incidente.creado_en >= datetime.combine(fecha_inicio, datetime.min.time()))
     if fecha_fin:
@@ -308,14 +380,12 @@ def metricas_globales(
         dist_ia[clave] += 1
 
     # ── Asignaciones / tiempo resolución ─────────────────────────────────────
-    asignaciones = (
-        db.query(Asignacion)
-        .filter(
-            Asignacion.accion_taller == "aceptado",
-            Asignacion.completado_en.isnot(None),
-        )
-        .all()
+    q_asig = db.query(Asignacion).filter(
+        Asignacion.accion_taller == "aceptado",
+        Asignacion.completado_en.isnot(None),
     )
+    q_asig = aplicar_filtro_tenant(q_asig, Asignacion, current_user)
+    asignaciones = q_asig.all()
     tiempos = []
     for asig in asignaciones:
         if asig.asignado_en and asig.completado_en and _en_rango(asig.asignado_en):
@@ -336,22 +406,28 @@ def metricas_globales(
     comisiones_totales = round(sum(float(p.comision_plataforma) for p in pagos), 2)
 
     # ── Talleres ──────────────────────────────────────────────────────────────
-    talleres_totales = db.query(Taller).count()
-    talleres_aprobados = db.query(Taller).filter(Taller.estado_aprobacion == "aprobado").count()
-    talleres_activos = db.query(Taller).filter(
-        Taller.activo == True, Taller.estado_aprobacion == "aprobado"  # noqa: E712
+    talleres_totales = aplicar_filtro_tenant(db.query(Taller), Taller, current_user).count()
+    talleres_aprobados = aplicar_filtro_tenant(
+        db.query(Taller).filter(Taller.estado_aprobacion == "aprobado"), Taller, current_user
+    ).count()
+    talleres_activos = aplicar_filtro_tenant(
+        db.query(Taller).filter(Taller.activo == True, Taller.estado_aprobacion == "aprobado"),  # noqa: E712
+        Taller, current_user,
     ).count()
 
-    # ── Usuarios por rol ──────────────────────────────────────────────────────
+    # ── Usuarios por rol (scoped por tenant si admin_tenant) ─────────────────
     roles = db.query(Rol).all()
     usuarios_por_rol = {}
     for rol in roles:
-        total = db.query(Usuario).filter(
+        q_u = db.query(Usuario).filter(
             Usuario.rol_id == rol.id, Usuario.activo == True  # noqa: E712
-        ).count()
-        usuarios_por_rol[rol.nombre] = total
+        )
+        q_u = aplicar_filtro_tenant(q_u, Usuario, current_user)
+        usuarios_por_rol[rol.nombre] = q_u.count()
 
-    usuarios_activos_total = db.query(Usuario).filter(Usuario.activo == True).count()  # noqa: E712
+    q_total = db.query(Usuario).filter(Usuario.activo == True)  # noqa: E712
+    q_total = aplicar_filtro_tenant(q_total, Usuario, current_user)
+    usuarios_activos_total = q_total.count()
 
     return {
         "filtro": {

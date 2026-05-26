@@ -82,12 +82,20 @@ def aprobar_solicitud(
             detail="Rol 'admin_taller' no encontrado. Reinicia la app para ejecutar el seed.",
         )
 
+    # Multi-tenant: la solicitud ya viene con tenant_id (asignado en CU-22)
+    if solicitud.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La solicitud no tiene tenant asignado. Reenvíala desde la landing con ?tenant_slug=",
+        )
+
     # Generar contraseña temporal
     contrasena_temporal = _generar_contrasena_temporal()
 
-    # Crear usuario
+    # Crear usuario (admin_taller hereda tenant de la solicitud)
     nuevo_usuario = Usuario(
         rol_id=rol.id,
+        tenant_id=solicitud.tenant_id,
         nombre_completo=solicitud.solicitante_nombre,
         correo=solicitud.solicitante_correo,
         hash_contrasena=hash_password(contrasena_temporal),
@@ -97,8 +105,9 @@ def aprobar_solicitud(
     db.add(nuevo_usuario)
     db.flush()  # obtener nuevo_usuario.id sin commit
 
-    # Crear taller
+    # Crear taller (hereda el tenant de la solicitud)
     nuevo_taller = Taller(
+        tenant_id=solicitud.tenant_id,
         administrador_id=nuevo_usuario.id,
         nombre=solicitud.nombre_taller,
         direccion=solicitud.direccion,

@@ -13,7 +13,11 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 # ── Request ───────────────────────────────────────────────────────────────────
 
 class SolicitudRegistroCreate(BaseModel):
-    """Body de CU-22: cualquier persona puede enviar este formulario."""
+    """Body de CU-22: cualquier persona puede enviar este formulario.
+
+    Multi-tenant: el solicitante indica a qué red (tenant) quiere unir su taller.
+    Si no se provee, el backend usa el primer tenant activo (modo dev).
+    """
     solicitante_nombre: str
     solicitante_correo: EmailStr
     solicitante_telefono: str | None = None
@@ -22,6 +26,7 @@ class SolicitudRegistroCreate(BaseModel):
     latitud: float | None = None
     longitud: float | None = None
     descripcion: str | None = None
+    tenant_slug: str | None = None
 
 
 class RechazarSolicitudRequest(BaseModel):
