@@ -151,6 +151,63 @@ def notif_auxilio_en_camino(
     )
 
 
+# ---------------------------------------------------------------------------
+# R3 — Cotizaciones (CU-34 / CU-35)
+# ---------------------------------------------------------------------------
+
+def notif_solicitud_cotizacion(
+    db: Session,
+    admin_taller_id: UUID,
+    incidente_id: UUID,
+    clasificacion: str | None,
+) -> None:
+    """Evento R3: el taller fue notificado como candidato para cotizar (CU-34)."""
+    tipo_label = clasificacion or "emergencia"
+    _crear(
+        db,
+        usuario_id=admin_taller_id,
+        incidente_id=incidente_id,
+        titulo="Nueva solicitud para cotizar",
+        cuerpo=f"Hay una emergencia de tipo «{tipo_label}» cerca. Envía tu cotización en los próximos 15 minutos.",
+        evento="solicitud_cotizacion",
+    )
+
+
+def notif_cotizacion_recibida(
+    db: Session,
+    cliente_id: UUID,
+    incidente_id: UUID,
+    nombre_taller: str,
+    monto: float,
+) -> None:
+    """Evento R3: llegó una cotización nueva al cliente (CU-34)."""
+    _crear(
+        db,
+        usuario_id=cliente_id,
+        incidente_id=incidente_id,
+        titulo="Nueva cotización recibida",
+        cuerpo=f"«{nombre_taller}» te ofreció el servicio por Bs. {monto:.2f}. Revísala antes de decidir.",
+        evento="cotizacion_recibida",
+    )
+
+
+def notif_cotizacion_aceptada(
+    db: Session,
+    admin_taller_id: UUID,
+    incidente_id: UUID,
+    nombre_taller: str,
+) -> None:
+    """Evento R3: el cliente aceptó la cotización del taller (CU-35)."""
+    _crear(
+        db,
+        usuario_id=admin_taller_id,
+        incidente_id=incidente_id,
+        titulo="¡Cotización aceptada!",
+        cuerpo=f"Un cliente eligió la cotización de «{nombre_taller}». Asigna un técnico para atender.",
+        evento="cotizacion_aceptada",
+    )
+
+
 def notif_taller_asignado(
     db: Session,
     cliente_id: UUID,

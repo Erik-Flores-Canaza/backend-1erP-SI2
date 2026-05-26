@@ -88,6 +88,19 @@ def analizar_incidente(incidente: Incidente, db: Session) -> Incidente:
         notificacion_service.notif_buscando_taller(
             db, cliente_id=incidente.cliente_id, incidente_id=incidente.id,
         )
+        # R3 (CU-34): notificar a los talleres candidatos para que envíen cotización
+        try:
+            candidatos = asignacion_service._talleres_candidatos(incidente, db)
+            for taller in candidatos[:5]:  # top 5 candidatos
+                notificacion_service.notif_solicitud_cotizacion(
+                    db,
+                    admin_taller_id=taller.administrador_id,
+                    incidente_id=incidente.id,
+                    clasificacion=incidente.clasificacion_ia,
+                )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Notif candidatos falló: %s", exc)
 
     db.commit()
     db.refresh(incidente)

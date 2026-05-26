@@ -18,6 +18,7 @@ from app.models.metrica_taller import MetricaTaller
 from app.models.metrica_plataforma import MetricaPlataforma
 from app.models.solicitud_registro_taller import SolicitudRegistroTaller
 from app.models.taller_favorito import TallerFavorito
+from app.models.cotizacion import Cotizacion
 
 __all__ = [
     "Rol",
@@ -40,4 +41,5 @@ __all__ = [
     "MetricaPlataforma",
     "SolicitudRegistroTaller",
     "TallerFavorito",
+    "Cotizacion",
 ]
