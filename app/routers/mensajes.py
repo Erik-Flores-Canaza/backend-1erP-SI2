@@ -141,6 +141,7 @@ async def websocket_chat(incidente_id: UUID, websocket: WebSocket, token: str = 
                     continue
 
                 mensaje = Mensaje(
+                    tenant_id=incidente.tenant_id,  # hereda tenant del incidente
                     incidente_id=incidente_id,
                     remitente_id=usuario.id,
                     rol_remitente=_rol_label(usuario),

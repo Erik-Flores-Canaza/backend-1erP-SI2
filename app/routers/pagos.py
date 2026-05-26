@@ -86,6 +86,7 @@ def registrar_monto(
     es_efectivo = (body.metodo_pago == "efectivo")
 
     pago = Pago(
+        tenant_id=incidente.tenant_id,  # hereda tenant del incidente
         incidente_id=body.incidente_id,
         monto_total=monto_total,
         comision_plataforma=comision,

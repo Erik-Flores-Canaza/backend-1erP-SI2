@@ -228,16 +228,33 @@ def get_incidente(
 ):
     """
     CU-06 — Estado actual del incidente con asignación y técnico.
-    Accesible por el cliente dueño del incidente o por admin_taller/técnico autenticado.
+
+    Accesos:
+    - cliente: solo sus propios incidentes (`cliente_id == user.id`)
+    - admin_taller, tecnico, admin_tenant: solo incidentes ya anclados a su tenant
+      (`incidente.tenant_id == user.tenant_id`). Si tenant_id es NULL (incidente
+      pendiente sin taller asignado) NO pueden verlo por este endpoint.
+    - superadmin_plataforma: cualquier incidente (cross-tenant)
     """
+    from app.core.tenant_context import es_cross_tenant
     incidente = db.query(Incidente).filter(Incidente.id == incidente_id).first()
     if not incidente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidente no encontrado")
 
     rol = current_user.rol.nombre if current_user.rol else ""
 
-    # El cliente solo puede ver sus propios incidentes
-    if rol == "cliente" and incidente.cliente_id != current_user.id:
+    # Cliente: solo el dueño
+    if rol == "cliente":
+        if incidente.cliente_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sin acceso a este incidente")
+        return incidente
+
+    # Cross-tenant: superadmin_plataforma ve todo
+    if es_cross_tenant(current_user):
+        return incidente
+
+    # Operadores (admin_taller / tecnico / admin_tenant): solo incidentes de su tenant
+    if incidente.tenant_id is None or incidente.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sin acceso a este incidente")
 
     return incidente

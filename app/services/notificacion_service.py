@@ -36,8 +36,17 @@ def _crear(
     tipo: str = "in_app",
     evento: str | None = None,
 ) -> Notificacion:
-    """Crea la notificación en BD y dispara WS + FCM."""
+    """Crea la notificación en BD y dispara WS + FCM. Hereda tenant_id del incidente si existe."""
+    # Multi-tenant: derivar tenant_id del incidente (si lo hay) para scoping futuro
+    tenant_id: UUID | None = None
+    if incidente_id is not None:
+        from app.models.incidente import Incidente
+        inc = db.query(Incidente.tenant_id).filter(Incidente.id == incidente_id).first()
+        if inc:
+            tenant_id = inc[0]
+
     notif = Notificacion(
+        tenant_id=tenant_id,
         usuario_id=usuario_id,
         incidente_id=incidente_id,
         tipo=tipo,
