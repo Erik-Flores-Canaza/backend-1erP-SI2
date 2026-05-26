@@ -11,6 +11,9 @@ class Taller(Base):
     __tablename__ = "talleres"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
     administrador_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
     direccion: Mapped[str | None] = mapped_column(String(255))
@@ -24,6 +27,7 @@ class Taller(Base):
     motivo_rechazo: Mapped[str | None] = mapped_column(Text)
     creado_en: Mapped[datetime] = mapped_column(default=func.now())
 
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="talleres")
     administrador: Mapped["Usuario"] = relationship("Usuario", back_populates="talleres_administrados")
     servicios: Mapped[list["ServicioTaller"]] = relationship("ServicioTaller", back_populates="taller")
     tecnicos: Mapped[list["Tecnico"]] = relationship("Tecnico", back_populates="taller")

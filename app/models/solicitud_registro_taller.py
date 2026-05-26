@@ -12,6 +12,11 @@ class SolicitudRegistroTaller(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
 
+    # Tenant al que pertenecerá el taller si se aprueba (un taller siempre se da de alta dentro de UN tenant)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+
     # Datos del solicitante (aún no es usuario en el sistema)
     solicitante_nombre: Mapped[str] = mapped_column(String(150), nullable=False)
     solicitante_correo: Mapped[str] = mapped_column(String(150), nullable=False)

@@ -11,6 +11,10 @@ class Evidencia(Base):
     __tablename__ = "evidencias"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    # Sigue al incidente: NULL hasta que el incidente queda asignado a un tenant
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
+    )
     incidente_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("incidentes.id"), nullable=False)
     tipo: Mapped[str] = mapped_column(String(20), nullable=False)
     url_archivo: Mapped[str | None] = mapped_column(String(500))

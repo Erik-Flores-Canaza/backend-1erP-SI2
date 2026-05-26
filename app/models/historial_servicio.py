@@ -11,6 +11,10 @@ class HistorialServicio(Base):
     __tablename__ = "historial_servicio"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    # Sigue al incidente: NULL hasta que el incidente queda asignado a un tenant
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
+    )
     incidente_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("incidentes.id"), nullable=False)
     cambiado_por: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
     estado_anterior: Mapped[str | None] = mapped_column(String(20))

@@ -1,4 +1,6 @@
 from app.models.rol import Rol
+from app.models.tenant import Tenant
+from app.models.solicitud_tenant import SolicitudTenant
 from app.models.usuario import Usuario
 from app.models.vehiculo import Vehiculo
 from app.models.taller import Taller
@@ -15,9 +17,12 @@ from app.models.mensaje import Mensaje
 from app.models.metrica_taller import MetricaTaller
 from app.models.metrica_plataforma import MetricaPlataforma
 from app.models.solicitud_registro_taller import SolicitudRegistroTaller
+from app.models.taller_favorito import TallerFavorito
 
 __all__ = [
     "Rol",
+    "Tenant",
+    "SolicitudTenant",
     "Usuario",
     "Vehiculo",
     "Taller",
@@ -34,4 +39,5 @@ __all__ = [
     "MetricaTaller",
     "MetricaPlataforma",
     "SolicitudRegistroTaller",
+    "TallerFavorito",
 ]

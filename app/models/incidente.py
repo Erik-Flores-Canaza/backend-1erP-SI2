@@ -11,6 +11,11 @@ class Incidente(Base):
     __tablename__ = "incidentes"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    # NULL hasta que un taller acepta cotización (estado 'pendiente'/'buscando_taller');
+    # NOT NULL una vez asignado al tenant del taller ganador.
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
+    )
     cliente_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
     vehiculo_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("vehiculos.id"), nullable=True)
     descripcion_texto: Mapped[str | None] = mapped_column(Text)

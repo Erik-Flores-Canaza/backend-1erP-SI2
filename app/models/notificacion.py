@@ -11,6 +11,10 @@ class Notificacion(Base):
     __tablename__ = "notificaciones"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    # NULL si la notificación no está atada a un tenant (p.ej. cotizaciones a un cliente global)
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
+    )
     usuario_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
     incidente_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("incidentes.id"))
     tipo: Mapped[str] = mapped_column(String(20), nullable=False)

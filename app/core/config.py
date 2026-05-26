@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     GMAIL_REFRESH_TOKEN: str = ""
     GMAIL_SENDER_EMAIL: str = ""
 
+    # Si es True, al arrancar siembra un tenant demo + 5 usuarios de prueba (R1, CU-28).
+    SEED_DEV: bool = False
+
     class Config:
         env_file = ".env"
 

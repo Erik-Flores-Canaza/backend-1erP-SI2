@@ -9,6 +9,7 @@ from starlette.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.seed import seed_roles
+from app.core.seed_dev import seed_dev
 from app.routers import (
     asignaciones,
     auth,
@@ -24,6 +25,8 @@ from app.routers.admin import admin_router, public_router as solicitudes_public_
 from app.routers.mensajes import http_router as mensajes_http_router
 from app.routers.mensajes import ws_router as mensajes_ws_router
 from app.routers.pagos import router as pagos_router
+from app.routers.plataforma import router as plataforma_router
+from app.routers.solicitudes_tenant import router as solicitudes_tenant_router
 from app.routers.ws_notificaciones import router as ws_notif_router
 from app.services.fcm_service import init_firebase
 import app.models.taller_favorito  # noqa: F401 — registra la tabla en SQLAlchemy
@@ -42,10 +45,13 @@ async def lifespan(app: FastAPI):
     from app.services import notificacion_service
     notificacion_service._main_loop = asyncio.get_running_loop()
 
-    # Seed inicial: inserta los 3 roles si no existen
+    # Seed inicial: inserta los 5 roles del sistema multi-tenant si no existen
     db = SessionLocal()
     try:
         seed_roles(db)
+        # Seed de desarrollo (tenant + usuarios de prueba) — solo si SEED_DEV=true
+        if settings.SEED_DEV:
+            seed_dev(db)
     finally:
         db.close()
     # Inicializar Firebase (no-op si no está configurado)
@@ -78,7 +84,9 @@ app = FastAPI(
         {"name": "Chat WebSocket",  "description": "Chat en tiempo real vía WebSocket (CU-08)"},
         {"name": "Notificaciones",  "description": "Notificaciones automáticas y gestión manual (CU-21, CU-09)"},
         {"name": "Superadmin — Solicitudes (público)", "description": "Formulario público de solicitud de registro de taller (CU-22)"},
-        {"name": "Superadmin — Panel", "description": "Panel de administración global — solo rol superadmin (CU-23, CU-24, CU-25)"},
+        {"name": "Superadmin — Panel", "description": "Panel de administración por tenant (CU-23, CU-24, CU-25) — rol admin_tenant o superadmin_plataforma"},
+        {"name": "Plataforma — Solicitudes (público)", "description": "Solicitud pública para crear nueva red de talleres (CU-29)"},
+        {"name": "Superadmin Plataforma — Tenants", "description": "CRUD de tenants y revisión de solicitudes (CU-28, CU-29) — solo rol superadmin_plataforma"},
         {"name": "Health",          "description": "Verificación de estado del servidor"},
     ],
 )
@@ -116,6 +124,10 @@ app.include_router(ws_notif_router, prefix="/ws")
 # ── Ciclo 3+ — Superadmin & Multi-sucursal ───────────────────────────────────
 app.include_router(solicitudes_public_router)   # POST /solicitudes-taller (CU-22)
 app.include_router(admin_router)                # /admin/* (CU-23, CU-24, CU-25)
+
+# ── Ciclo 4 — Multi-tenant SaaS ──────────────────────────────────────────────
+app.include_router(solicitudes_tenant_router)   # POST /solicitudes-tenant (CU-29 público)
+app.include_router(plataforma_router)           # /plataforma/* (CU-28 + revisión CU-29)
 
 
 @app.get("/health", tags=["Health"])

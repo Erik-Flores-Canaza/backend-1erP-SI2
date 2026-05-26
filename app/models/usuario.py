@@ -12,6 +12,11 @@ class Usuario(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     rol_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("roles.id"), nullable=False)
+    # NULL para rol 'cliente' (global cross-tenant) y 'superadmin_plataforma' (sin tenant)
+    # NOT NULL en la práctica para 'admin_tenant', 'admin_taller', 'tecnico'
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True
+    )
     nombre_completo: Mapped[str] = mapped_column(String(150), nullable=False)
     correo: Mapped[str] = mapped_column(String(150), unique=True, nullable=False, index=True)
     hash_contrasena: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -22,6 +27,7 @@ class Usuario(Base):
     actualizado_en: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now())
 
     rol: Mapped["Rol"] = relationship("Rol", back_populates="usuarios")
+    tenant: Mapped["Tenant | None"] = relationship("Tenant", back_populates="usuarios")
     vehiculos: Mapped[list["Vehiculo"]] = relationship("Vehiculo", back_populates="propietario")
     # CU-26: un admin_taller puede tener múltiples talleres (sucursales)
     talleres_administrados: Mapped[list["Taller"]] = relationship("Taller", back_populates="administrador")

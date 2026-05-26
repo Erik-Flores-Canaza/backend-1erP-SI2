@@ -1,8 +1,12 @@
 """
-Script de desarrollo — crear cuenta superadmin.
+Script de desarrollo — crear cuenta superadmin_plataforma.
 Uso: python create_superadmin.py
 
 NO usar en producción. Para producción insertar directamente en la DB.
+
+Multi-tenant R1: el rol antiguo `superadmin` se renombró a `admin_tenant` (por-tenant).
+Este script crea un `superadmin_plataforma` (cross-tenant, sin tenant_id).
+Si quieres un admin de un tenant específico, usa POST /plataforma/tenants/con-admin.
 """
 import sys
 from app.core.database import SessionLocal
@@ -11,7 +15,7 @@ from app.models.usuario import Usuario
 from app.models.rol import Rol
 
 def main() -> None:
-    print("=== Crear Superadmin ===")
+    print("=== Crear Superadmin Plataforma (cross-tenant) ===")
     nombre   = input("Nombre completo: ").strip()
     correo   = input("Correo:          ").strip()
     password = input("Contraseña:      ").strip()
@@ -22,10 +26,10 @@ def main() -> None:
 
     db = SessionLocal()
     try:
-        # Verificar que el rol superadmin existe
-        rol = db.query(Rol).filter(Rol.nombre == "superadmin").first()
+        # Verificar que el rol superadmin_plataforma existe
+        rol = db.query(Rol).filter(Rol.nombre == "superadmin_plataforma").first()
         if not rol:
-            print("ERROR: El rol 'superadmin' no existe. Inicia el servidor al menos una vez para que seed_roles() lo cree.")
+            print("ERROR: El rol 'superadmin_plataforma' no existe. Inicia el servidor al menos una vez para que seed_roles() lo cree.")
             sys.exit(1)
 
         # Verificar correo único
@@ -36,6 +40,7 @@ def main() -> None:
 
         usuario = Usuario(
             rol_id          = rol.id,
+            tenant_id       = None,  # superadmin_plataforma es cross-tenant
             nombre_completo = nombre,
             correo          = correo,
             hash_contrasena = hash_password(password),

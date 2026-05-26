@@ -11,6 +11,9 @@ class Tecnico(Base):
     __tablename__ = "tecnicos"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
     usuario_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("usuarios.id"), nullable=False)
     taller_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("talleres.id"), nullable=False)
     latitud_actual: Mapped[float | None] = mapped_column(DECIMAL(10, 7))

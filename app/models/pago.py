@@ -11,6 +11,9 @@ class Pago(Base):
     __tablename__ = "pagos"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
     incidente_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("incidentes.id"), unique=True, nullable=False)
     monto_total: Mapped[float] = mapped_column(DECIMAL(10, 2), nullable=False)
     comision_plataforma: Mapped[float] = mapped_column(DECIMAL(10, 2), nullable=False)
