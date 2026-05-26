@@ -28,6 +28,7 @@ from app.routers.pagos import router as pagos_router
 from app.routers.plataforma import router as plataforma_router
 from app.routers.solicitudes_tenant import router as solicitudes_tenant_router
 from app.routers.ws_notificaciones import router as ws_notif_router
+from app.routers.ws_tracking import router as ws_tracking_router
 from app.services.fcm_service import init_firebase
 import app.models.taller_favorito  # noqa: F401 — registra la tabla en SQLAlchemy
 
@@ -87,6 +88,7 @@ app = FastAPI(
         {"name": "Superadmin — Panel", "description": "Panel de administración por tenant (CU-23, CU-24, CU-25) — rol admin_tenant o superadmin_plataforma"},
         {"name": "Plataforma — Solicitudes (público)", "description": "Solicitud pública para crear nueva red de talleres (CU-29)"},
         {"name": "Superadmin Plataforma — Tenants", "description": "CRUD de tenants y revisión de solicitudes (CU-28, CU-29) — solo rol superadmin_plataforma"},
+        {"name": "Tracking WebSocket", "description": "WS de tracking en vivo del técnico — solo activo cuando incidente está en estado 'en_camino' (CU-32)"},
         {"name": "Health",          "description": "Verificación de estado del servidor"},
     ],
 )
@@ -128,6 +130,9 @@ app.include_router(admin_router)                # /admin/* (CU-23, CU-24, CU-25)
 # ── Ciclo 4 — Multi-tenant SaaS ──────────────────────────────────────────────
 app.include_router(solicitudes_tenant_router)   # POST /solicitudes-tenant (CU-29 público)
 app.include_router(plataforma_router)           # /plataforma/* (CU-28 + revisión CU-29)
+
+# ── Ciclo 4 R2 — Tracking en vivo del técnico ────────────────────────────────
+app.include_router(ws_tracking_router, prefix="/ws")  # WS /ws/tracking/{incidente_id} (CU-32)
 
 
 @app.get("/health", tags=["Health"])
