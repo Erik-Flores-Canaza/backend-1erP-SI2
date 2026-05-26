@@ -5,6 +5,7 @@ from app.core.timezone import now_bo
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core import estado_incidente as estado_machine
 from app.dependencies import get_current_user, get_db, require_cliente
 from app.models.asignacion import Asignacion
 from app.models.incidente import Incidente
@@ -98,7 +99,7 @@ def listar_candidatos(
     if not incidente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidente no encontrado")
 
-    if incidente.estado != "pendiente":
+    if incidente.estado not in (estado_machine.PENDIENTE, estado_machine.BUSCANDO_TALLER):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="El incidente ya tiene un taller asignado.",
@@ -128,7 +129,7 @@ def seleccionar_taller(
     if not incidente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidente no encontrado")
 
-    if incidente.estado != "pendiente":
+    if incidente.estado not in (estado_machine.PENDIENTE, estado_machine.BUSCANDO_TALLER):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="El incidente ya tiene un taller asignado.",
@@ -168,7 +169,7 @@ def asignar_automatico(
     if not incidente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidente no encontrado")
 
-    if incidente.estado != "pendiente":
+    if incidente.estado not in (estado_machine.PENDIENTE, estado_machine.BUSCANDO_TALLER):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="El incidente ya tiene un taller asignado.",
@@ -282,14 +283,17 @@ def cancelar_incidente(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="Incidente no encontrado")
 
-    if incidente.estado in ("atendido", "cancelado"):
+    if not estado_machine.puede_cancelar(incidente.estado):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Este incidente ya fue finalizado y no puede cancelarse.",
+            detail=(
+                f"No se puede cancelar desde estado '{incidente.estado}'. "
+                "Solo se permite cancelar antes de que el técnico haya llegado al sitio."
+            ),
         )
 
     incidente_service.registrar_cambio_estado(
-        db, incidente, "cancelado", current_user.id,
+        db, incidente, estado_machine.CANCELADO, current_user.id,
         notas="Cancelado por el cliente",
     )
 
@@ -350,8 +354,8 @@ def actualizar_estado(
         db, incidente, body.estado, current_user.id, body.notas
     )
 
-    # Al cerrar el incidente (atendido/cancelado) liberar taller y técnico
-    if body.estado in ("atendido", "cancelado"):
+    # Al cerrar el incidente (finalizado/cancelado) liberar taller y técnico
+    if body.estado in estado_machine.ESTADOS_CERRADOS:
         asignacion = (
             db.query(Asignacion)
             .filter(
@@ -369,8 +373,8 @@ def actualizar_estado(
                 tecnico = db.query(Tecnico).filter(Tecnico.id == asignacion.tecnico_id).first()
                 if tecnico:
                     tecnico.disponible = True
-        # Notificar al cliente si fue atendido
-        if body.estado == "atendido":
+        # Notificar al cliente si fue finalizado correctamente
+        if body.estado == estado_machine.FINALIZADO:
             notificacion_service.notif_servicio_completado(
                 db, cliente_id=incidente.cliente_id, incidente_id=incidente.id
             )

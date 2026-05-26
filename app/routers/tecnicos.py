@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core import estado_incidente as estado_machine
 from app.dependencies import get_current_user, get_db, require_admin_taller, require_tecnico
 from app.models.asignacion import Asignacion
 from app.models.incidente import Incidente
@@ -117,7 +118,7 @@ def get_orden_activa(
             Asignacion.tecnico_id == tecnico.id,
             Asignacion.accion_taller == "aceptado",
             Asignacion.completado_en == None,           # noqa: E711
-            Incidente.estado.in_(["pendiente", "en_proceso"]),
+            Incidente.estado.in_(list(estado_machine.ESTADOS_ACTIVOS)),
         )
         .first()
     )

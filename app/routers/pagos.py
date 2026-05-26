@@ -4,6 +4,7 @@ import stripe
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core import estado_incidente as estado_machine
 from app.core.config import settings
 from app.dependencies import get_current_user, get_db, require_cliente, require_tecnico
 from app.models.asignacion import Asignacion
@@ -47,10 +48,10 @@ def registrar_monto(
     if not incidente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidente no encontrado")
 
-    if incidente.estado != "atendido":
+    if incidente.estado != estado_machine.FINALIZADO:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"El incidente debe estar en estado 'atendido'. Estado actual: '{incidente.estado}'",
+            detail=f"El incidente debe estar en estado 'finalizado'. Estado actual: '{incidente.estado}'",
         )
 
     # Verificar que el técnico autenticado es el asignado a este incidente
@@ -151,10 +152,10 @@ def crear_payment_intent(
     if not incidente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidente no encontrado")
 
-    if incidente.estado != "atendido":
+    if incidente.estado != estado_machine.FINALIZADO:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"El incidente debe estar en estado 'atendido'. Estado actual: '{incidente.estado}'",
+            detail=f"El incidente debe estar en estado 'finalizado'. Estado actual: '{incidente.estado}'",
         )
 
     pago = db.query(Pago).filter(Pago.incidente_id == body.incidente_id).first()

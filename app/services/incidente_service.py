@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core import estado_incidente as estado_machine
 from app.models.incidente import Incidente
 from app.models.historial_servicio import HistorialServicio
 from app.models.vehiculo import Vehiculo
@@ -41,7 +42,7 @@ def crear_incidente(db: Session, body: IncidenteCreate, cliente_id: UUID) -> Inc
         descripcion_texto=body.descripcion,
         latitud=body.latitud,
         longitud=body.longitud,
-        estado="pendiente",
+        estado=estado_machine.PENDIENTE,
         prioridad="incierto",
     )
     db.add(incidente)
@@ -58,8 +59,10 @@ def crear_incidente(db: Session, body: IncidenteCreate, cliente_id: UUID) -> Inc
 def analizar_incidente(incidente: Incidente, db: Session) -> Incidente:
     """
     CU-18 + CU-19 — Paso 2: Procesa evidencias con IA y genera clasificación.
+    Al terminar, transiciona el incidente de `pendiente` a `buscando_taller`
+    (CU-31 — máquina de estados R2).
     NO dispara asignación — el cliente verá la lista de candidatos y podrá elegir
-    o dejar que el sistema asigne automáticamente (ver seleccionar_taller / asignar_automatico).
+    o dejar que el sistema asigne automáticamente.
     """
     # CU-18: procesar evidencias
     try:
@@ -76,6 +79,16 @@ def analizar_incidente(incidente: Incidente, db: Session) -> Incidente:
     incidente.resumen_ia       = resumen["resumen_ia"]
     incidente.prioridad        = resumen["prioridad"]
 
+    # CU-31: pendiente → buscando_taller tras análisis IA
+    if incidente.estado == estado_machine.PENDIENTE:
+        registrar_cambio_estado(
+            db, incidente, estado_machine.BUSCANDO_TALLER, incidente.cliente_id,
+            notas="IA completó el análisis — buscando taller compatible",
+        )
+        notificacion_service.notif_buscando_taller(
+            db, cliente_id=incidente.cliente_id, incidente_id=incidente.id,
+        )
+
     db.commit()
     db.refresh(incidente)
     return incidente
@@ -89,14 +102,24 @@ def registrar_cambio_estado(
     notas: str | None = None,
 ) -> None:
     """
-    CU-14: Registra en HISTORIAL_SERVICIO el cambio de estado del incidente.
+    CU-14 + CU-31: Registra en HISTORIAL_SERVICIO el cambio de estado del incidente.
+    Valida la transición contra la máquina de estados de 7 estados (R2).
     El caller debe hacer db.commit() después.
     """
-    estados_validos = {"pendiente", "en_proceso", "atendido", "cancelado"}
-    if nuevo_estado not in estados_validos:
+    if not estado_machine.es_estado_valido(nuevo_estado):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Estado inválido. Valores permitidos: {sorted(estados_validos)}",
+            detail=f"Estado inválido. Valores permitidos: {sorted(estado_machine.ESTADOS_VALIDOS)}",
+        )
+
+    if not estado_machine.es_transicion_valida(incidente.estado, nuevo_estado):
+        permitidas = sorted(estado_machine.TRANSICIONES_PERMITIDAS.get(incidente.estado, set()))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Transición inválida: {incidente.estado} → {nuevo_estado}. "
+                f"Desde '{incidente.estado}' solo se permite: {permitidas}"
+            ),
         )
 
     historial = HistorialServicio(

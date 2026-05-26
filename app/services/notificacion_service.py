@@ -124,6 +124,33 @@ def notif_incidente_creado(db: Session, cliente_id: UUID, incidente_id: UUID) ->
     )
 
 
+def notif_buscando_taller(db: Session, cliente_id: UUID, incidente_id: UUID) -> None:
+    """Evento R2: la IA terminó y se pasó a estado `buscando_taller` (CU-31)."""
+    _crear(
+        db,
+        usuario_id=cliente_id,
+        incidente_id=incidente_id,
+        titulo="Buscando taller cercano",
+        cuerpo="Analizamos tu emergencia. Estamos contactando al taller más cercano y compatible.",
+    )
+
+
+def notif_auxilio_en_camino(
+    db: Session,
+    cliente_id: UUID,
+    incidente_id: UUID,
+    nombre_tecnico: str,
+) -> None:
+    """Evento R2: el técnico salió del taller (estado `en_camino`, CU-31)."""
+    _crear(
+        db,
+        usuario_id=cliente_id,
+        incidente_id=incidente_id,
+        titulo="¡Tu auxilio ya viene!",
+        cuerpo=f"{nombre_tecnico} salió del taller y está en camino a tu ubicación.",
+    )
+
+
 def notif_taller_asignado(
     db: Session,
     cliente_id: UUID,

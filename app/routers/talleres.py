@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core import estado_incidente as estado_machine
 from app.core.tenant_context import verificar_acceso_tenant
 from app.dependencies import get_current_user, get_db, require_admin_taller, require_cliente
 from app.models.asignacion import Asignacion
@@ -53,7 +54,7 @@ def sincronizar_disponible(taller: Taller, db: Session) -> None:
         Asignacion.taller_id == taller.id,
         Asignacion.accion_taller == "aceptado",
         Asignacion.completado_en == None,           # noqa: E711
-        Incidente.estado.in_(["pendiente", "en_proceso"]),
+        Incidente.estado.in_(list(estado_machine.ESTADOS_ACTIVOS)),
     ).first() is not None
 
     correcto = not tiene_orden_activa
@@ -399,7 +400,7 @@ def get_historial(
         .filter(
             Asignacion.taller_id == taller_id,
             Asignacion.accion_taller == "aceptado",
-            Incidente.estado.in_(["atendido", "cancelado"]),
+            Incidente.estado.in_(list(estado_machine.ESTADOS_CERRADOS)),
         )
         .order_by(Asignacion.asignado_en.desc())
         .all()

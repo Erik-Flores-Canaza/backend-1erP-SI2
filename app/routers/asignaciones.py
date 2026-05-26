@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core import estado_incidente as estado_machine
 from app.dependencies import get_current_user, get_db, require_admin_taller, require_tecnico
 from app.models.asignacion import Asignacion
 from app.models.incidente import Incidente
@@ -70,7 +71,7 @@ def listar_ordenes_activas(
             Asignacion.taller_id == taller_id,
             Asignacion.accion_taller == "aceptado",
             Asignacion.completado_en == None,           # noqa: E711
-            Incidente.estado.in_(["pendiente", "en_proceso"]),
+            Incidente.estado.in_(list(estado_machine.ESTADOS_ACTIVOS)),
         )
         .all()
     )
@@ -177,6 +178,12 @@ def responder_asignacion(
             nombre_taller=taller.nombre,
             eta_minutos=body.eta_minutos,
         )
+        # CU-31: incidente pasa a estado `taller_asignado`
+        if incidente.estado == estado_machine.BUSCANDO_TALLER:
+            incidente_service.registrar_cambio_estado(
+                db, incidente, estado_machine.TALLER_ASIGNADO, current_user.id,
+                notas=f"Taller '{taller.nombre}' aceptó la solicitud",
+            )
     else:
         # Rechazado → notificar y reasignar (CU-20)
         notificacion_service.notif_taller_rechazo(
@@ -241,7 +248,7 @@ def asignar_tecnico(
         .join(Incidente, Asignacion.incidente_id == Incidente.id)
         .filter(
             Asignacion.tecnico_id == body.tecnico_id,
-            Incidente.estado.in_(["pendiente", "en_proceso"]),
+            Incidente.estado.in_(list(estado_machine.ESTADOS_ACTIVOS)),
             Asignacion.completado_en == None,  # noqa: E711
         )
         .first()
@@ -271,10 +278,10 @@ def asignar_tecnico(
         eta = max(5, math.ceil(distancia_km / 0.5))
         asignacion.eta_minutos = eta
 
-    # Actualizar estado del incidente a 'en_proceso'
+    # CU-31: incidente pasa a `en_camino` (técnico sale del taller con la asignación)
     incidente_service.registrar_cambio_estado(
-        db, incidente, "en_proceso", current_user.id,
-        notas=f"Técnico {tecnico.usuario.nombre_completo} asignado",
+        db, incidente, estado_machine.EN_CAMINO, current_user.id,
+        notas=f"Técnico {tecnico.usuario.nombre_completo} asignado y en camino",
     )
 
     # CU-21: Notificar al cliente y al técnico
@@ -282,6 +289,12 @@ def asignar_tecnico(
         db,
         cliente_id=incidente.cliente_id,
         tecnico_usuario_id=tecnico.usuario_id,
+        incidente_id=incidente.id,
+        nombre_tecnico=tecnico.usuario.nombre_completo,
+    )
+    notificacion_service.notif_auxilio_en_camino(
+        db,
+        cliente_id=incidente.cliente_id,
         incidente_id=incidente.id,
         nombre_tecnico=tecnico.usuario.nombre_completo,
     )
@@ -302,8 +315,10 @@ def tecnico_en_sitio(
     current_user: Usuario = Depends(require_tecnico),
 ):
     """
-    El técnico confirma que llegó a la ubicación del cliente.
-    Envía una notificación al cliente sin cambiar el estado del incidente.
+    CU-38 — El técnico marca su llegada al sitio del cliente.
+    - Setea `asignacion.tecnico_llego_en` (timestamp para KPI tiempo de llegada).
+    - Transiciona el incidente de `en_camino` a `en_atencion` (CU-31).
+    - Notifica al cliente.
     """
     asignacion = _get_asignacion(asignacion_id, db)
 
@@ -315,11 +330,18 @@ def tecnico_en_sitio(
             detail="Solo el técnico asignado puede confirmar llegada.",
         )
 
-    if asignacion.incidente.estado not in ("en_proceso",):
+    if asignacion.incidente.estado != estado_machine.EN_CAMINO:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="El incidente no está en proceso.",
+            detail=f"El incidente debe estar en 'en_camino'. Estado actual: '{asignacion.incidente.estado}'",
         )
+
+    # Registrar timestamp de llegada y transicionar estado
+    asignacion.tecnico_llego_en = now_bo()
+    incidente_service.registrar_cambio_estado(
+        db, asignacion.incidente, estado_machine.EN_ATENCION, current_user.id,
+        notas="Técnico llegó al sitio del cliente",
+    )
 
     notificacion_service.notif_tecnico_en_sitio(
         db,
@@ -372,10 +394,10 @@ def completar_servicio(
     if asignacion.taller:
         asignacion.taller.disponible = True
 
-    # Actualizar estado del incidente
+    # CU-31: incidente pasa a `finalizado`
     incidente: Incidente = asignacion.incidente
     incidente_service.registrar_cambio_estado(
-        db, incidente, "atendido", current_user.id,
+        db, incidente, estado_machine.FINALIZADO, current_user.id,
         notas="Servicio completado por el técnico",
     )
 

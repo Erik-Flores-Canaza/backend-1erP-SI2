@@ -71,7 +71,9 @@ class IncidenteCreate(BaseModel):
 
 
 class IncidenteEstadoUpdate(BaseModel):
-    estado: str   # 'pendiente' | 'en_proceso' | 'atendido' | 'cancelado'
+    # 7 estados R2 (CU-31): pendiente | buscando_taller | taller_asignado |
+    #                       en_camino | en_atencion | finalizado | cancelado
+    estado: str
     notas: str | None = None
 
 

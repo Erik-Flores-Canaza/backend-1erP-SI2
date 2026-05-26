@@ -21,6 +21,8 @@ class Asignacion(Base):
     taller_respondio_en: Mapped[datetime | None] = mapped_column()
     eta_minutos: Mapped[int | None] = mapped_column(Integer)
     asignado_en: Mapped[datetime] = mapped_column(default=func.now())
+    # CU-38: timestamp cuando el técnico marca llegada al sitio (estado en_atencion).
+    tecnico_llego_en: Mapped[datetime | None] = mapped_column()
     completado_en: Mapped[datetime | None] = mapped_column()
 
     incidente: Mapped["Incidente"] = relationship("Incidente", back_populates="asignaciones")
