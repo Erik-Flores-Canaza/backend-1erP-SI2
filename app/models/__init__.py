@@ -19,6 +19,7 @@ from app.models.metrica_plataforma import MetricaPlataforma
 from app.models.solicitud_registro_taller import SolicitudRegistroTaller
 from app.models.taller_favorito import TallerFavorito
 from app.models.cotizacion import Cotizacion
+from app.models.sla_config import SlaConfig
 
 __all__ = [
     "Rol",
@@ -42,4 +43,5 @@ __all__ = [
     "SolicitudRegistroTaller",
     "TallerFavorito",
     "Cotizacion",
+    "SlaConfig",
 ]

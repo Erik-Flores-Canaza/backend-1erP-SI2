@@ -2,7 +2,7 @@ from uuid import UUID
 
 from app.core.timezone import now_bo
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core import estado_incidente as estado_machine
@@ -25,14 +25,36 @@ router = APIRouter(prefix="/incidentes", tags=["Incidentes"])
 @router.post("", response_model=IncidenteResponse, status_code=status.HTTP_201_CREATED)
 def crear_incidente(
     body: IncidenteCreate,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_cliente),
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+        max_length=64,
+        description="UUID generado por el cliente. Si se reintenta el mismo key para el mismo usuario, "
+                    "no se crea un nuevo incidente y se devuelve el ya existente (200 en vez de 201).",
+    ),
 ):
     """
     CU-05 — Reportar emergencia.
-    Crea el incidente, procesa evidencias con IA (stub) y dispara la asignación inteligente.
+
+    Soporta header `Idempotency-Key` (CU-40/CU-41 Flutter offline-first): si el cliente
+    reintenta el mismo POST tras recuperar la conexión, el servidor reconoce la clave
+    y devuelve el incidente original en lugar de crear un duplicado.
     """
-    return incidente_service.crear_incidente(db, body, current_user.id)
+    if idempotency_key:
+        existente = db.query(Incidente).filter(
+            Incidente.idempotency_key == idempotency_key,
+            Incidente.cliente_id == current_user.id,
+        ).first()
+        if existente:
+            response.status_code = status.HTTP_200_OK
+            return existente
+
+    return incidente_service.crear_incidente(
+        db, body, current_user.id, idempotency_key=idempotency_key,
+    )
 
 
 # ---------------------------------------------------------------------------

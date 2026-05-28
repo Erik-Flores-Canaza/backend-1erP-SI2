@@ -12,6 +12,9 @@ Rutas protegidas con rol superadmin:
   PATCH  /admin/usuarios/{id}/activar            CU-24
   PATCH  /admin/usuarios/{id}/desactivar         CU-24
   GET    /admin/metricas                         CU-25
+  GET    /admin/sla                              CU-37
+  PUT    /admin/sla/{tipo_servicio}              CU-37
+  GET    /admin/kpis                             CU-39
 """
 
 from datetime import date, datetime, timezone
@@ -371,7 +374,8 @@ def metricas_globales(
     incidentes = q_inc.all()
 
     incidentes_totales = len(incidentes)
-    incidentes_resueltos = sum(1 for i in incidentes if i.estado == "atendido")
+    # R2: el estado terminal pasó de 'atendido' a 'finalizado' tras la máquina de 7 estados
+    incidentes_resueltos = sum(1 for i in incidentes if i.estado == "finalizado")
 
     # Distribución por clasificación IA
     dist_ia: dict[str, int] = defaultdict(int)
@@ -459,3 +463,113 @@ def metricas_globales(
             "por_rol": usuarios_por_rol,
         },
     }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CU-37 — Configurar SLA por tipo de servicio (admin_tenant)
+# ════════════════════════════════════════════════════════════════════════════
+
+from app.dependencies import require_admin_tenant  # noqa: E402
+from app.models.sla_config import SlaConfig  # noqa: E402
+from app.schemas.sla_config import (  # noqa: E402
+    SlaConfigResponse,
+    SlaConfigUpsert,
+    TipoServicio,
+)
+
+
+@admin_router.get(
+    "/sla",
+    response_model=list[SlaConfigResponse],
+    summary="CU-37 — Listar SLAs configurados del tenant",
+)
+def listar_sla(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_tenant),
+):
+    """Devuelve los SLAs del tenant del admin (un registro por tipo de servicio,
+    si fue configurado). Tipos sin SLA no aparecen — el frontend muestra
+    placeholders editables."""
+    if current_user.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin tenant sin tenant_id asociado",
+        )
+    return (
+        db.query(SlaConfig)
+        .filter(SlaConfig.tenant_id == current_user.tenant_id)
+        .order_by(SlaConfig.tipo_servicio)
+        .all()
+    )
+
+
+@admin_router.put(
+    "/sla/{tipo_servicio}",
+    response_model=SlaConfigResponse,
+    summary="CU-37 — Crear o actualizar SLA de un tipo de servicio",
+)
+def upsert_sla(
+    tipo_servicio: TipoServicio,
+    body: SlaConfigUpsert,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_tenant),
+):
+    """Upsert: si existe SLA para (tenant, tipo) lo actualiza; si no, lo crea."""
+    if current_user.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin tenant sin tenant_id asociado",
+        )
+
+    sla = (
+        db.query(SlaConfig)
+        .filter(
+            SlaConfig.tenant_id == current_user.tenant_id,
+            SlaConfig.tipo_servicio == tipo_servicio,
+        )
+        .first()
+    )
+    if sla:
+        sla.minutos_asignacion_objetivo = body.minutos_asignacion_objetivo
+        sla.minutos_llegada_objetivo = body.minutos_llegada_objetivo
+        sla.minutos_resolucion_objetivo = body.minutos_resolucion_objetivo
+    else:
+        sla = SlaConfig(
+            tenant_id=current_user.tenant_id,
+            tipo_servicio=tipo_servicio,
+            minutos_asignacion_objetivo=body.minutos_asignacion_objetivo,
+            minutos_llegada_objetivo=body.minutos_llegada_objetivo,
+            minutos_resolucion_objetivo=body.minutos_resolucion_objetivo,
+        )
+        db.add(sla)
+    db.commit()
+    db.refresh(sla)
+    return sla
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CU-39 — Dashboard de KPIs operacionales por tenant
+# ════════════════════════════════════════════════════════════════════════════
+
+from app.services import kpi_service  # noqa: E402
+
+
+@admin_router.get(
+    "/kpis",
+    summary="CU-39 — Dashboard de KPIs operacionales por tenant",
+)
+def dashboard_kpis(
+    fecha_inicio: date | None = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
+    fecha_fin: date | None = Query(None, description="Fecha fin (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_superadmin),
+):
+    """Devuelve los 7 KPIs del CU-39 calculados desde datos reales del tenant.
+
+    - `admin_tenant`: scoped a su tenant.
+    - `superadmin_plataforma`: agregados de toda la plataforma (cross-tenant).
+    """
+    return kpi_service.calcular_kpis(
+        db=db, current_user=current_user,
+        fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+    )

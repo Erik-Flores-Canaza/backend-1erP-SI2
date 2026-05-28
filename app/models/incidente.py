@@ -26,6 +26,9 @@ class Incidente(Base):
     clasificacion_ia: Mapped[str | None] = mapped_column(String(50))
     confianza_ia: Mapped[float | None] = mapped_column(Float)
     resumen_ia: Mapped[str | None] = mapped_column(Text)
+    # CU-40/CU-41: clave de idempotencia para reintentos offline-first desde Flutter.
+    # NULL para incidentes creados online (web). Único parcial (solo cuando no es NULL).
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     creado_en: Mapped[datetime] = mapped_column(default=func.now())
     actualizado_en: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now())
 

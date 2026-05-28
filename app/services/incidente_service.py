@@ -17,11 +17,19 @@ from app.schemas.incidente import IncidenteCreate
 from app.services import asignacion_service, ia_service, notificacion_service
 
 
-def crear_incidente(db: Session, body: IncidenteCreate, cliente_id: UUID) -> Incidente:
+def crear_incidente(
+    db: Session,
+    body: IncidenteCreate,
+    cliente_id: UUID,
+    idempotency_key: str | None = None,
+) -> Incidente:
     """
     CU-05 — Paso 1: Crea el incidente y notifica al cliente.
     La IA y la asignación se disparan DESPUÉS en analizar_incidente(),
     una vez que las evidencias (imágenes/audio) ya fueron subidas.
+
+    Si `idempotency_key` viene (CU-40/CU-41), se persiste para que reintentos
+    posteriores devuelvan el mismo incidente en lugar de duplicar.
     """
     vehiculo_id = None
     if body.vehiculo_id is not None:
@@ -44,6 +52,7 @@ def crear_incidente(db: Session, body: IncidenteCreate, cliente_id: UUID) -> Inc
         longitud=body.longitud,
         estado=estado_machine.PENDIENTE,
         prioridad="incierto",
+        idempotency_key=idempotency_key,
     )
     db.add(incidente)
     db.flush()
