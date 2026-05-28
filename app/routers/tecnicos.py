@@ -107,6 +107,8 @@ def get_orden_activa(
     (accion_taller='aceptado', completado_en IS NULL, incidente no atendido/cancelado).
     Retorna null si no hay orden activa.
     """
+    from app.models.cotizacion import Cotizacion
+
     tecnico = db.query(Tecnico).filter(Tecnico.usuario_id == current_user.id).first()
     if not tecnico:
         return None
@@ -122,7 +124,24 @@ def get_orden_activa(
         )
         .first()
     )
-    return asignacion
+    if not asignacion:
+        return None
+
+    # Buscar la cotización aceptada del incidente para anclar el monto a cobrar.
+    cot = (
+        db.query(Cotizacion)
+        .filter(
+            Cotizacion.incidente_id == asignacion.incidente_id,
+            Cotizacion.estado == "aceptada",
+        )
+        .first()
+    )
+
+    # Pydantic from_attributes: serializar la asignación y agregar el monto.
+    resp = OrdenActivaTecnicoResponse.model_validate(asignacion)
+    if cot is not None:
+        resp.monto_cotizado = float(cot.monto_estimado)
+    return resp
 
 
 def _get_tecnico_del_admin(tecnico_id: UUID, current_user: Usuario, db: Session) -> Tecnico:

@@ -75,3 +75,6 @@ class OrdenActivaTecnicoResponse(BaseModel):
     asignado_en: datetime
     completado_en: datetime | None = None
     incidente: IncidenteEnOrden | None = None
+    # Monto que el cliente aceptó en la cotización ganadora (CU-35).
+    # El técnico no fija el cobro: usa este valor para registrarlo.
+    monto_cotizado: float | None = None
