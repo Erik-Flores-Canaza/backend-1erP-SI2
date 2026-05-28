@@ -80,15 +80,26 @@ def registrar_monto(
             detail="Ya existe un pago registrado para este incidente",
         )
 
-    monto_total = round(body.monto, 2)
+    # Desglose del cobro: base (cotizado) + adicional (ajuste del técnico)
+    monto_base = round(body.monto_base, 2)
+    monto_adicional = round(body.monto_adicional, 2)
+    monto_total = round(monto_base + monto_adicional, 2)
     comision = round(monto_total * COMISION_PORCENTAJE, 2)
     neto_taller = round(monto_total - comision, 2)
+
+    # Solo guardar el motivo si hay adicional real (> 0); evita motivos huérfanos
+    motivo = body.motivo_adicional.strip() if (
+        body.motivo_adicional and monto_adicional > 0
+    ) else None
 
     es_efectivo = (body.metodo_pago == "efectivo")
 
     pago = Pago(
         tenant_id=incidente.tenant_id,  # hereda tenant del incidente
         incidente_id=body.incidente_id,
+        monto_base=monto_base,
+        monto_adicional=monto_adicional,
+        motivo_adicional=motivo,
         monto_total=monto_total,
         comision_plataforma=comision,
         neto_taller=neto_taller,
