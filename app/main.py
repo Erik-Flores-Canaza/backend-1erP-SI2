@@ -26,6 +26,8 @@ from app.routers.mensajes import http_router as mensajes_http_router
 from app.routers.mensajes import ws_router as mensajes_ws_router
 from app.routers.pagos import router as pagos_router
 from app.routers.cotizaciones import router as cotizaciones_router
+from app.routers.calificaciones import router as calificaciones_router
+from app.routers.reportes import router as reportes_router
 from app.routers.plataforma import router as plataforma_router
 from app.routers.solicitudes_tenant import router as solicitudes_tenant_router
 from app.routers.ws_notificaciones import router as ws_notif_router
@@ -58,7 +60,48 @@ async def lifespan(app: FastAPI):
         db.close()
     # Inicializar Firebase (no-op si no está configurado)
     init_firebase()
+
+    # Job de mantenimiento de cotizaciones (R3): expira TTL vencidos y amplía
+    # el alcance de incidentes sin cotizaciones. Corre cada 60s en background.
+    cotizacion_job = asyncio.create_task(_loop_mantenimiento_cotizaciones())
+
     yield
+
+    # Apagado ordenado del job
+    cotizacion_job.cancel()
+    try:
+        await cotizacion_job
+    except asyncio.CancelledError:
+        pass
+
+
+async def _loop_mantenimiento_cotizaciones(intervalo_seg: int = 60) -> None:
+    """Ejecuta el ciclo de jobs de cotizaciones cada `intervalo_seg` segundos.
+
+    El trabajo de BD es síncrono, así que se delega a un thread con
+    `asyncio.to_thread` para no bloquear el event loop (WS, tracking, etc.).
+    """
+    import asyncio
+    import logging
+    from app.services import cotizacion_jobs
+
+    log = logging.getLogger(__name__)
+
+    def _correr_ciclo() -> None:
+        db = SessionLocal()
+        try:
+            cotizacion_jobs.ejecutar_ciclo(db)
+        finally:
+            db.close()
+
+    while True:
+        try:
+            await asyncio.sleep(intervalo_seg)
+            await asyncio.to_thread(_correr_ciclo)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Loop de mantenimiento de cotizaciones falló: %s", exc)
 
 
 app = FastAPI(
@@ -91,6 +134,8 @@ app = FastAPI(
         {"name": "Superadmin Plataforma — Tenants", "description": "CRUD de tenants y revisión de solicitudes (CU-28, CU-29) — solo rol superadmin_plataforma"},
         {"name": "Tracking WebSocket", "description": "WS de tracking en vivo del técnico — solo activo cuando incidente está en estado 'en_camino' (CU-32)"},
         {"name": "Cotizaciones", "description": "Cotizaciones del taller a un incidente (CU-34) + selección por el cliente (CU-35) — R3"},
+        {"name": "Calificaciones", "description": "Calificaciones y reseñas post-servicio + moderación por admin_tenant (CU-43 — aporte propio)"},
+        {"name": "Reportes", "description": "Reportes personalizables en PDF/Excel/HTML — operacional del tenant (CU-44), del cliente (CU-45) y petición por voz (CU-46)"},
         {"name": "Health",          "description": "Verificación de estado del servidor"},
     ],
 )
@@ -138,6 +183,12 @@ app.include_router(ws_tracking_router, prefix="/ws")  # WS /ws/tracking/{inciden
 
 # ── Ciclo 4 R3 — Cotizaciones ───────────────────────────────────────────────
 app.include_router(cotizaciones_router)               # CU-34 + CU-35
+
+# ── Ciclo 5 — Aporte propio: Calificaciones y reseñas ────────────────────────
+app.include_router(calificaciones_router)             # CU-43
+
+# ── Ciclo 5 — Reportes personalizables (3 formatos) + voz ────────────────────
+app.include_router(reportes_router)                   # CU-44 / CU-45 / CU-46
 
 
 @app.get("/health", tags=["Health"])

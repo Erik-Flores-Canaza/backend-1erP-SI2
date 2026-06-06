@@ -20,6 +20,7 @@ from app.models.solicitud_registro_taller import SolicitudRegistroTaller
 from app.models.taller_favorito import TallerFavorito
 from app.models.cotizacion import Cotizacion
 from app.models.sla_config import SlaConfig
+from app.models.calificacion import Calificacion
 
 __all__ = [
     "Rol",
@@ -44,4 +45,5 @@ __all__ = [
     "TallerFavorito",
     "Cotizacion",
     "SlaConfig",
+    "Calificacion",
 ]

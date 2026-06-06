@@ -27,7 +27,11 @@ class CotizacionResponse(BaseModel):
 
 
 class CotizacionConTallerResponse(BaseModel):
-    """Cotización + datos básicos del taller para que el cliente decida (CU-35)."""
+    """Cotización + datos básicos del taller para que el cliente decida (CU-35).
+
+    Incluye el promedio de calificaciones del taller (CU-43) para que el cliente
+    no decida solo por precio sino también por reputación.
+    """
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -40,6 +44,9 @@ class CotizacionConTallerResponse(BaseModel):
     estado: str
     enviado_en: datetime
     expira_en: datetime
+    # CU-43 — reputación del taller
+    taller_calificacion_promedio: float | None = None
+    taller_calificaciones_total: int = 0
 
 
 class IncidentePendienteParaCotizar(BaseModel):

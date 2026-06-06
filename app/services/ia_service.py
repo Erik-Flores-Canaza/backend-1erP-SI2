@@ -92,6 +92,80 @@ def _transcribir_audio(client, ruta: Path) -> str:
     return result.text
 
 
+def transcribir(ruta: Path) -> str | None:
+    """Transcribe un archivo de audio a texto (Whisper). None si IA no disponible."""
+    if not _ia_disponible():
+        return None
+    try:
+        return _transcribir_audio(_get_client(), ruta)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Transcripción de voz falló: %s", exc)
+        return None
+
+
+# Prompt para CU-46: interpretar una petición de reporte hablada → filtros JSON
+_PROMPT_REPORTE_VOZ = """\
+Eres un asistente que interpreta peticiones habladas de reportes de servicios de
+auxilio vehicular. El usuario es un cliente que pide un reporte de SUS servicios.
+Hoy es {hoy}. A partir del texto, responde ÚNICAMENTE con un JSON válido:
+
+{{
+  "desde":   "<YYYY-MM-DD o null>",
+  "hasta":   "<YYYY-MM-DD o null>",
+  "estado":  "<finalizado|cancelado|null>",
+  "formato": "<pdf|excel|html>"
+}}
+
+Reglas:
+- Interpreta rangos relativos respecto de hoy ("este mes", "la semana pasada",
+  "los últimos 3 meses", "este año"). Si no menciona fechas, deja ambas en null.
+- "estado" solo si el usuario lo menciona explícitamente (servicios finalizados,
+  cancelados); si no, null.
+- "formato" por defecto "pdf"; usa "excel" si dice Excel/hoja de cálculo y "html"
+  si dice HTML/página web.
+- Responde SOLO el JSON, sin texto adicional."""
+
+
+def interpretar_peticion_reporte(texto: str) -> dict:
+    """CU-46 — Convierte la transcripción en filtros estructurados de reporte.
+
+    Devuelve dict con claves desde/hasta/estado/formato. Ante cualquier fallo
+    devuelve valores seguros (sin filtros, PDF).
+    """
+    seguro = {"desde": None, "hasta": None, "estado": None, "formato": "pdf"}
+    if not _ia_disponible() or not texto.strip():
+        return seguro
+    try:
+        from datetime import date as _date
+        client = _get_client()
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": _PROMPT_REPORTE_VOZ.format(hoy=_date.today().isoformat())},
+                {"role": "user", "content": texto},
+            ],
+            response_format={"type": "json_object"},
+            max_tokens=120,
+            temperature=0.0,
+        )
+        data = json.loads(response.choices[0].message.content or "{}")
+        fmt = data.get("formato", "pdf")
+        if fmt not in ("pdf", "excel", "html"):
+            fmt = "pdf"
+        estado = data.get("estado")
+        if estado not in ("finalizado", "cancelado"):
+            estado = None
+        return {
+            "desde": data.get("desde") or None,
+            "hasta": data.get("hasta") or None,
+            "estado": estado,
+            "formato": fmt,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Interpretación de petición de reporte falló: %s", exc)
+        return seguro
+
+
 def _analizar_imagen(client, ruta: Path) -> str:
     """Analiza imagen de daño vehicular con GPT-4o Vision."""
     with open(ruta, "rb") as f:

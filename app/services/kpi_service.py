@@ -21,10 +21,12 @@ from collections import defaultdict
 from datetime import date, datetime
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.tenant_context import aplicar_filtro_tenant
 from app.models.asignacion import Asignacion
+from app.models.calificacion import Calificacion
 from app.models.cotizacion import Cotizacion
 from app.models.incidente import Incidente
 from app.models.sla_config import SlaConfig
@@ -221,6 +223,24 @@ def calcular_kpis(
         round(sla_cumplidos / sla_aplicables * 100, 2) if sla_aplicables > 0 else None
     )
 
+    # ── KPI #8 (aporte propio CU-43): satisfacción promedio ──────────────────
+    # Promedio de reseñas visibles de los incidentes del universo (respeta el
+    # filtro de tenant + rango de fechas porque se limita a ids_incidentes).
+    satisfaccion_promedio: float | None = None
+    satisfaccion_total = 0
+    if ids_incidentes:
+        fila = (
+            db.query(func.avg(Calificacion.puntuacion), func.count(Calificacion.id))
+            .filter(
+                Calificacion.incidente_id.in_(ids_incidentes),
+                Calificacion.oculta == False,  # noqa: E712
+            )
+            .first()
+        )
+        if fila and fila[1]:
+            satisfaccion_promedio = round(float(fila[0]), 2)
+            satisfaccion_total = int(fila[1])
+
     return {
         "filtro": {
             "fecha_inicio": str(fecha_inicio) if fecha_inicio else None,
@@ -253,5 +273,10 @@ def calcular_kpis(
                 }
                 for tipo, vals in detalle_sla.items()
             },
+        },
+        # KPI #8 — aporte propio (CU-43)
+        "satisfaccion": {
+            "promedio": satisfaccion_promedio,
+            "total_resenas": satisfaccion_total,
         },
     }

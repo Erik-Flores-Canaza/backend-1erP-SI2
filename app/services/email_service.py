@@ -119,6 +119,130 @@ def enviar_credenciales_admin_taller(
         return False
 
 
+def enviar_credenciales_admin_tenant(
+    destinatario: str,
+    nombre: str,
+    nombre_red: str,
+    contrasena_temporal: str,
+) -> bool:
+    """
+    Envía al admin de un nuevo tenant (red de talleres) sus credenciales de acceso.
+    Se usa al aprobar una solicitud de alta de red (CU-29).
+
+    Returns:
+        True  — correo enviado con éxito.
+        False — no configurado o error (ver logs).
+    """
+    if not settings.GMAIL_CLIENT_ID:
+        logger.warning(
+            "Gmail OAuth no configurado. Se omite el envío de credenciales de red a %s.",
+            destinatario,
+        )
+        return False
+
+    asunto = "Tu red de talleres fue aprobada — Credenciales de acceso"
+    cuerpo = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; color: #222; max-width: 600px; margin: auto;">
+      <h2 style="color: #e53935;">¡Tu red de talleres fue aprobada!</h2>
+      <p>Hola <strong>{nombre}</strong>,</p>
+      <p>
+        Tu solicitud para crear la red <strong>"{nombre_red}"</strong> en la plataforma
+        ha sido <span style="color: #43a047;">aprobada</span>.
+      </p>
+      <p>Ya puedes iniciar sesión como administrador de tu red con estas credenciales:</p>
+      <table style="border-collapse: collapse; width: 100%;">
+        <tr>
+          <td style="padding: 8px; border: 1px solid #ddd; background:#f5f5f5;"><strong>Correo</strong></td>
+          <td style="padding: 8px; border: 1px solid #ddd;">{destinatario}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #ddd; background:#f5f5f5;"><strong>Contraseña temporal</strong></td>
+          <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 1.1em;">
+            {contrasena_temporal}
+          </td>
+        </tr>
+      </table>
+      <p style="margin-top: 16px;">
+        <strong>Por tu seguridad, cambia esta contraseña al iniciar sesión por primera vez.</strong>
+      </p>
+      <p>Desde tu panel podrás aprobar talleres, gestionar usuarios y ver tus indicadores.</p>
+      <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
+      <p style="font-size: 0.85em; color: #888;">
+        Plataforma Inteligente de Atención de Emergencias Vehiculares
+      </p>
+    </body>
+    </html>
+    """
+
+    try:
+        service = _build_gmail_service()
+        payload = _compose_message(destinatario, asunto, cuerpo)
+        service.users().messages().send(userId="me", body=payload).execute()
+        logger.info("Credenciales de red enviadas a %s", destinatario)
+        return True
+    except Exception as exc:
+        logger.error("Error al enviar credenciales de red a %s: %s", destinatario, exc)
+        return False
+
+
+def enviar_rechazo_solicitud_tenant(
+    destinatario: str,
+    nombre: str,
+    nombre_red: str,
+    motivo: str,
+) -> bool:
+    """
+    Notifica al solicitante que su solicitud de alta de red fue rechazada (CU-29).
+
+    Returns:
+        True  — correo enviado con éxito.
+        False — no configurado o error (ver logs).
+    """
+    if not settings.GMAIL_CLIENT_ID:
+        logger.warning(
+            "Gmail OAuth no configurado. Se omite notificación de rechazo de red a %s.",
+            destinatario,
+        )
+        return False
+
+    asunto = "Actualización sobre tu solicitud de red de talleres"
+    cuerpo = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; color: #222; max-width: 600px; margin: auto;">
+      <h2 style="color: #e53935;">Solicitud no aprobada</h2>
+      <p>Hola <strong>{nombre}</strong>,</p>
+      <p>
+        Lamentamos informarte que tu solicitud para crear la red
+        <strong>"{nombre_red}"</strong> no pudo ser aprobada en este momento.
+      </p>
+      <p><strong>Motivo:</strong></p>
+      <blockquote style="border-left: 4px solid #e53935; padding-left: 12px; color: #555;">
+        {motivo}
+      </blockquote>
+      <p>
+        Si consideras que hay un error o deseas aportar información adicional,
+        puedes volver a enviar una solicitud corregida.
+      </p>
+      <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
+      <p style="font-size: 0.85em; color: #888;">
+        Plataforma Inteligente de Atención de Emergencias Vehiculares
+      </p>
+    </body>
+    </html>
+    """
+
+    try:
+        service = _build_gmail_service()
+        payload = _compose_message(destinatario, asunto, cuerpo)
+        service.users().messages().send(userId="me", body=payload).execute()
+        logger.info("Notificación de rechazo de red enviada a %s", destinatario)
+        return True
+    except Exception as exc:
+        logger.error("Error al enviar notificación de rechazo de red a %s: %s", destinatario, exc)
+        return False
+
+
 def enviar_rechazo_solicitud(
     destinatario: str,
     nombre: str,

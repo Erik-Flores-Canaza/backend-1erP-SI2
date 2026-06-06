@@ -266,9 +266,15 @@ def listar_cotizaciones_de_incidente(
         .all()
     )
 
+    # CU-43: promedio de calificaciones por taller (una sola query)
+    from app.services import calificacion_service
+    taller_ids = list({c.taller_id for c in cotizaciones})
+    promedios = calificacion_service.promedios_por_taller(db, taller_ids)
+
     resultado = []
     for c in cotizaciones:
         taller = db.query(Taller).filter(Taller.id == c.taller_id).first()
+        prom, total = promedios.get(c.taller_id, (None, 0))
         resultado.append({
             "id": c.id,
             "taller_id": c.taller_id,
@@ -282,7 +288,19 @@ def listar_cotizaciones_de_incidente(
             "estado": c.estado,
             "enviado_en": c.enviado_en,
             "expira_en": c.expira_en,
+            "taller_calificacion_promedio": prom,
+            "taller_calificaciones_total": total,
         })
+
+    # CU-43: las cotizaciones vigentes mejor calificadas primero (la aceptada/
+    # expiradas quedan al final). El cliente decide, pero ve antes a los talleres
+    # con mejor reputación.
+    def _orden(r: dict) -> tuple:
+        activa = 0 if r["estado"] == "enviada" else 1
+        prom = r["taller_calificacion_promedio"]
+        return (activa, -(prom if prom is not None else -1))
+
+    resultado.sort(key=_orden)
     return resultado
 
 

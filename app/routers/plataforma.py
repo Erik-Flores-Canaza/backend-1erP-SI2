@@ -21,6 +21,7 @@ from app.schemas.tenant import (
     TenantResponse,
     TenantUpdate,
 )
+from app.services import email_service
 from app.services import solicitud_tenant_service as solic
 from app.services import tenant_service as tsvc
 
@@ -166,10 +167,20 @@ def aprobar_solicitud(
     s.revisado_en = now_bo()
     db.commit()
 
+    # CU-29: enviar credenciales al admin de la nueva red (best-effort vía Gmail).
+    # Si el correo falla, la contraseña igual se devuelve en el body (modal del panel).
+    correo_enviado = email_service.enviar_credenciales_admin_tenant(
+        destinatario=s.solicitante_correo,
+        nombre=s.solicitante_nombre,
+        nombre_red=s.nombre_red,
+        contrasena_temporal=contrasena_temp,
+    )
+
     return TenantCreateResponse(
         tenant=TenantResponse.model_validate(tenant),
         admin_correo=body.admin_correo,
         contrasena_temporal=contrasena_temp,
+        correo_enviado=correo_enviado,
     )
 
 
@@ -195,4 +206,13 @@ def rechazar_solicitud(
     s.revisado_en = now_bo()
     db.commit()
     db.refresh(s)
+
+    # CU-29: notificar el rechazo al solicitante (best-effort vía Gmail).
+    email_service.enviar_rechazo_solicitud_tenant(
+        destinatario=s.solicitante_correo,
+        nombre=s.solicitante_nombre,
+        nombre_red=s.nombre_red,
+        motivo=body.motivo_rechazo,
+    )
+
     return s

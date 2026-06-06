@@ -32,6 +32,15 @@ class TenantResponse(TenantBase):
         from_attributes = True
 
 
+class RedPublica(BaseModel):
+    """Red (tenant) activa mostrada en el formulario público de registro de taller (CU-22)."""
+    nombre: str
+    slug: str
+
+    class Config:
+        from_attributes = True
+
+
 class TenantCreateConAdmin(TenantCreate):
     """Crea un tenant + su primer admin_tenant en un solo paso."""
     admin_nombre_completo: str = Field(min_length=2, max_length=150)
@@ -45,3 +54,4 @@ class TenantCreateResponse(BaseModel):
     tenant: TenantResponse
     admin_correo: EmailStr
     contrasena_temporal: str | None = None  # solo se devuelve si el sistema generó la contraseña
+    correo_enviado: bool = False            # si se envió el correo de credenciales (CU-29)

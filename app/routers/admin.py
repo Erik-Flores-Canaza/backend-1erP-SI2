@@ -38,6 +38,7 @@ from app.schemas.solicitud_registro import (
     SolicitudRegistroCreate,
     SolicitudRegistroResponse,
 )
+from app.schemas.tenant import RedPublica
 from app.schemas.usuario import UsuarioResponse
 from app.services import admin_service
 
@@ -48,6 +49,26 @@ public_router = APIRouter(tags=["Superadmin — Solicitudes (público)"])
 
 # Rutas protegidas para el panel superadmin
 admin_router = APIRouter(prefix="/admin", tags=["Superadmin — Panel"])
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CU-22 — Listar redes (tenants) activas para el formulario público
+# ════════════════════════════════════════════════════════════════════════════
+
+@public_router.get(
+    "/redes",
+    response_model=list[RedPublica],
+    summary="CU-22 — Listar redes de talleres activas (público, para elegir al registrarse)",
+)
+def listar_redes_publicas(db: Session = Depends(get_db)):
+    """Devuelve las redes (tenants) activas para que el solicitante elija a cuál
+    unir su taller. Solo expone nombre y slug (sin datos internos)."""
+    return (
+        db.query(Tenant)
+        .filter(Tenant.activo == True)  # noqa: E712
+        .order_by(Tenant.nombre)
+        .all()
+    )
 
 
 # ════════════════════════════════════════════════════════════════════════════
