@@ -16,6 +16,11 @@ class ServicioTallerCreate(BaseModel):
         return v
 
 
+class ServicioTallerUpdate(BaseModel):
+    """Activar/desactivar un servicio existente del taller."""
+    disponible: bool
+
+
 class ServicioTallerResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -16,7 +16,11 @@ from app.models.taller import Taller
 from app.models.tecnico import Tecnico
 from app.models.usuario import Usuario
 from app.schemas.candidato import FavoritoResponse
-from app.schemas.servicio_taller import ServicioTallerCreate, ServicioTallerResponse
+from app.schemas.servicio_taller import (
+    ServicioTallerCreate,
+    ServicioTallerResponse,
+    ServicioTallerUpdate,
+)
 from app.schemas.taller import (
     AtencionesPorMes,
     AtencionesPorTipo,
@@ -376,6 +380,41 @@ def list_servicios(
     if not db.query(Taller).filter(Taller.id == taller_id).first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Taller no encontrado")
     return db.query(ServicioTaller).filter(ServicioTaller.taller_id == taller_id).all()
+
+
+@router.patch("/{taller_id}/servicios/{servicio_id}", response_model=ServicioTallerResponse)
+def update_servicio(
+    taller_id: UUID,
+    servicio_id: UUID,
+    body: ServicioTallerUpdate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_taller),
+):
+    """Activa o desactiva un servicio existente del taller (admin_taller dueño)."""
+    taller = db.query(Taller).filter(
+        Taller.id == taller_id, Taller.administrador_id == current_user.id
+    ).first()
+    if not taller:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Taller no encontrado")
+
+    servicio = db.query(ServicioTaller).filter(
+        ServicioTaller.id == servicio_id,
+        ServicioTaller.taller_id == taller_id,
+    ).first()
+    if not servicio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Servicio no encontrado")
+
+    servicio.disponible = body.disponible
+    db.commit()
+    db.refresh(servicio)
+
+    # Recalcular disponibilidad del taller; si se reactivó, intentar asignar pendientes.
+    sincronizar_disponible(taller, db)
+    if body.disponible:
+        asignacion_service.intentar_asignar_pendientes(db)
+        db.commit()
+
+    return servicio
 
 
 @router.get("/{taller_id}/historial", response_model=list[HistorialItemResponse])
