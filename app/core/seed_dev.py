@@ -1,7 +1,7 @@
 """Seed de datos de desarrollo. Solo se ejecuta si `SEED_DEV=true` en el .env.
 
 Crea:
-- 1 tenant "Auxilio Demo" (slug=auxilio-demo)
+- 1 tenant "Auxilio Norte" (slug=auxilio-norte)
 - 5 usuarios de prueba con contraseñas conocidas
 - 1 taller aprobado dentro del tenant
 - 1 técnico activo
@@ -20,22 +20,22 @@ from app.models.usuario import Usuario
 
 
 CREDENCIALES = [
-    ("super@plataforma.io", "super123", "Super Plataforma", "superadmin_plataforma", None),
-    ("admin@demo.io",       "admin123", "Admin Demo",        "admin_tenant",         "auxilio-demo"),
-    ("taller@demo.io",      "taller123","Dueño Taller Demo", "admin_taller",         "auxilio-demo"),
-    ("tecnico@demo.io",     "tecnico123","Técnico Demo",      "tecnico",              "auxilio-demo"),
-    ("cliente@demo.io",     "cliente123","Cliente Demo",      "cliente",              None),
+    ("superplataforma@gmail.com", "contra123", "Super Plataforma", "superadmin_plataforma", None),
+    ("adminnorte@gmail.com",      "contra123", "Admin Norte",      "admin_tenant",          "auxilio-norte"),
+    ("talleronorte@gmail.com",    "contra123", "Dueño Taller Norte","admin_taller",          "auxilio-norte"),
+    ("tecniconorte@gmail.com",    "contra123", "Técnico Norte",     "tecnico",               "auxilio-norte"),
+    ("clientenorte@gmail.com",    "contra123", "Cliente Norte",     "cliente",               None),
 ]
 
 
 def _get_or_create_tenant(db: Session) -> Tenant:
-    tenant = db.query(Tenant).filter(Tenant.slug == "auxilio-demo").first()
+    tenant = db.query(Tenant).filter(Tenant.slug == "auxilio-norte").first()
     if tenant:
         return tenant
     tenant = Tenant(
-        nombre="Auxilio Demo",
-        slug="auxilio-demo",
-        correo_contacto="contacto@auxilio-demo.io",
+        nombre="Auxilio Norte",
+        slug="auxilio-norte",
+        correo_contacto="contacto@auxilionorte.com",
         plan="basico",
         activo=True,
     )
@@ -79,7 +79,7 @@ def seed_dev(db: Session) -> None:
         rol = roles.get(rol_nombre)
         if not rol:
             continue
-        tid = tenant.id if tenant_slug == "auxilio-demo" else None
+        tid = tenant.id if tenant_slug == "auxilio-norte" else None
         creados[rol_nombre] = _get_or_create_user(db, correo, pwd, nombre, rol.id, tid)
 
     # Taller demo del admin_taller (si no existe)
@@ -94,8 +94,8 @@ def seed_dev(db: Session) -> None:
             taller = Taller(
                 tenant_id=tenant.id,
                 administrador_id=admin_taller.id,
-                nombre="Taller Central Demo",
-                direccion="Av. Demo 123",
+                nombre="Taller Central Norte",
+                direccion="Av. Norte 123",
                 latitud=-17.7833,
                 longitud=-63.1822,
                 porcentaje_comision=10.0,
